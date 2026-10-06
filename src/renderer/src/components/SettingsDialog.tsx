@@ -17,6 +17,8 @@ interface Props {
   data: UserData
   onSaveData: (patch: Partial<UserData>) => void
   initialTab?: SettingsTab
+  /** 有新版本等着处理：「关于」页签上亮红点，和左边栏设置按钮上的红点对上 */
+  updateDue?: boolean
   onClose: () => void
   onSettingsSaved: (s: Settings) => void
   onAccountUpdated: (a: Account) => void
@@ -356,6 +358,11 @@ export function SettingsDialog(props: Props) {
                   <Icon name={t.icon} size={18} />
                 </span>
                 {t.label}
+                {t.id === 'about' && props.updateDue && (
+                  <span className="tab-badge" title="有新版本">
+                    新版本
+                  </span>
+                )}
               </button>
             ))}
           </nav>

@@ -93,9 +93,9 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
   return status
 }
 
-/** 窗口被切回来时：离上次检查超过半小时就再查一次（程序常年开着，光靠定时器容易错过） */
+/** 窗口被切回来时：离上次检查超过 10 分钟就再查一次（程序常年开着，光靠定时器容易错过） */
 export function checkIfStale(): void {
-  if (Date.now() - lastCheck > 30 * 60 * 1000) void checkForUpdate()
+  if (Date.now() - lastCheck > 10 * 60 * 1000) void checkForUpdate()
 }
 
 /** 退出程序并装上已经下载好的新版本，装完自动重新打开 */
@@ -133,7 +133,7 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
     // 已经下载好了的话，后面再报什么错都不影响安装
     if (status.state !== 'ready') set({ state: 'error', error: friendly(err), version: status.version, checkedAt: Date.now() })
   })
-  // 打开程序 10 秒后查一次，之后每小时查一次；切回窗口时离上次超过半小时也会查
+  // 打开程序 10 秒后查一次，之后每 15 分钟查一次（只是读一个很小的版本说明文件）；切回窗口时离上次超过 10 分钟也会查
   setTimeout(() => void checkForUpdate(), 10000)
-  setInterval(() => void checkForUpdate(), 3600 * 1000)
+  setInterval(() => void checkForUpdate(), 15 * 60 * 1000)
 }

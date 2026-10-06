@@ -409,10 +409,22 @@ export function startWatcher(
       // 每次问完再定下一次：间隔随时按设置里的最新值来，上一次还没回来也不会堆积
       const ask = (): void => {
         if (w.stopped || w.client !== client || !client.usable) return
+        // 连接被代理或路由悄悄掐断时，NOOP 不会报错也不会回来，监听就这么干等下去、再也收不到新邮件。
+        // 所以 12 秒没回应就认定断了，关掉它，close 事件会触发自动重连（并补上断线期间到的新邮件）
+        const dead = setTimeout(() => {
+          if (w.stopped || w.client !== client) return
+          console.warn(`[watch ${account.email}] 连接没有回应，重新连接`)
+          try {
+            client.close()
+          } catch {
+            // 已经断了
+          }
+        }, 12000)
         client
           .noop()
           .catch(() => undefined)
           .finally(() => {
+            clearTimeout(dead)
             if (!w.stopped && w.client === client) w.poll = setTimeout(ask, pollMs())
           })
       }

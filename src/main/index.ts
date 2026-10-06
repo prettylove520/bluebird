@@ -285,6 +285,7 @@ function watch(account: Account): void {
   startWatcher(
     account,
     (incoming) => {
+      console.warn(`[新邮件] ${account.email} 收到 ${incoming.length} 封`)
       let mails = incoming
       const n = getSettings().notify
       // 屏蔽的发件人不提醒；开启「只通知真人来信」后，通知和订阅类邮件也不提醒（重要发件人除外）

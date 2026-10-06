@@ -230,6 +230,8 @@ export default function App() {
   dataRef.current = data
 
   const listReq = useRef(0)
+  /** 列表上次从服务器更新的时间：窗口被切回来时据此决定要不要悄悄刷新一次 */
+  const lastListAt = useRef(Date.now())
   const detailReq = useRef(0)
   const pendingOpen = useRef<MsgRef | null>(null)
   // 更新分三步，每一步都由用户决定：发现新版本（要不要下载）→ 下载中 → 下载好了（要不要马上重启安装）。
@@ -241,6 +243,8 @@ export default function App() {
     // 界面还没准备好的时候就发现了、下载好了的，也要看得到
     api.updateStatus().then(setUpdate).catch(() => undefined)
   }, [])
+  /** 有新版本等着处理（发现了没下载，或者下载好了没安装） */
+  const updateDue = update?.state === 'available' || update?.state === 'ready'
   const updateStep = update && (update.state === 'available' || update.state === 'downloading' || update.state === 'ready') ? `${update.state}${update.version ?? ''}` : ''
   const remoteAllowed = useRef(false)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -588,6 +592,7 @@ export default function App() {
         if (v.accountId !== ALL) pageSeq.current = page.messages.length ? Math.min(...page.messages.map((m) => m.seq)) : 0
       }
       setTotal(page.total)
+      lastListAt.current = Date.now()
       if (!q && !isVirtual(v.accountId)) void loadPinnedExtras(v, page.messages, id)
       const want = pendingOpen.current
       if (want) {
@@ -2286,6 +2291,7 @@ export default function App() {
   // 主进程推送的事件需要拿到最新的状态，用 ref 保存最新的处理函数
   const handlers = useRef({
     onNewMail: (_: NewMailEvent) => undefined as void,
+    onWindowFocus: () => undefined as void,
     onToastOpen: (_: { accountId: string; folder: string; uid?: number }) => undefined as void,
     onChanged: (_: { accountId: string }) => undefined as void,
     onOpenMail: (_: { accountId: string; folder: string; uid?: number }) => undefined as void,
@@ -2323,10 +2329,26 @@ export default function App() {
     notify('已撤销')
   }
 
+  /** 「所有收件箱」里只刷新某一个邮箱：来了新邮件不用等其他七八个邮箱（尤其是连得慢的）一起回来 */
+  const refreshOneInbox = async (accountId: string): Promise<void> => {
+    const folder = inboxPath(accountId)
+    const id = listReq.current
+    try {
+      const page = await api.list(accountId, folder)
+      if (id !== listReq.current) return
+      const group = groupOf({ accountId, folder, uid: 0 })
+      setMessages((prev) => mergeFresh(page.messages, prev, true, [group]))
+      lastListAt.current = Date.now()
+    } catch {
+      // 这个邮箱暂时连不上：保持原样，下次有动静再刷新
+    }
+  }
+
   const refreshIfViewing = (accountId: string, onlyInbox: boolean): void => {
     if (!view || activeQuery || isVirtual(view.accountId)) return
     if (view.accountId === ALL) {
-      void loadList(view, '', true)
+      if (accountId !== ALL && accounts.some((a) => a.id === accountId)) void refreshOneInbox(accountId)
+      else void loadList(view, '', true)
       return
     }
     if (accountId !== ALL && view.accountId !== accountId) return
@@ -2359,6 +2381,14 @@ export default function App() {
       return [...rest.filter(keep), ...rest.filter((x) => !keep(x)).slice(-3), toast]
     })
     setTimeout(close, 8000)
+  }
+
+  // 窗口从后台切回来：离上次更新超过 40 秒，就悄悄对一下账（睡眠唤醒、网络切换后常有漏掉的新邮件）
+  handlers.current.onWindowFocus = () => {
+    if (Date.now() - lastListAt.current < 40000) return
+    lastListAt.current = Date.now()
+    for (const a of accounts) void loadFolders(a.id)
+    refreshIfViewing(ALL, false)
   }
 
   handlers.current.onChanged = ({ accountId }) => {
@@ -2584,10 +2614,13 @@ export default function App() {
       })
     ]
     const onKey = (e: KeyboardEvent): void => handlers.current.onKey(e)
+    const onFocus = (): void => handlers.current.onWindowFocus()
     window.addEventListener('keydown', onKey)
+    window.addEventListener('focus', onFocus)
     return () => {
       offs.forEach((off) => off())
       window.removeEventListener('keydown', onKey)
+      window.removeEventListener('focus', onFocus)
     }
   }, [])
 
@@ -2895,7 +2928,7 @@ export default function App() {
       }}
       onSettings={() => {
         setDrawer(false)
-        setDialog({ kind: 'settings' })
+        setDialog({ kind: 'settings', tab: updateDue ? 'about' : undefined })
       }}
     />
   )
@@ -2914,8 +2947,8 @@ export default function App() {
         onGo={onRail}
         onMore={() => setDrawer((v) => !v)}
         onScheduled={() => setShowScheduled(true)}
-        onSettings={() => setDialog({ kind: 'settings' })}
-        updateReady={update?.state === 'available' || update?.state === 'ready'}
+        onSettings={() => setDialog({ kind: 'settings', tab: updateDue ? 'about' : undefined })}
+        updateReady={updateDue}
         onAccountMenu={openAccountSwitcher}
       />
 
@@ -3226,6 +3259,7 @@ export default function App() {
           initialTab={dialog.tab}
           onClose={() => setDialog(null)}
           onSettingsSaved={setSettings}
+          updateDue={updateDue}
           onAccountUpdated={onAccountUpdated}
           onAccountRemoved={onAccountRemoved}
           onAddAccount={() => setDialog({ kind: 'add' })}
