@@ -262,6 +262,9 @@ export default function App() {
   // 提示挂一会儿就自己收起来（点「下载更新」后在下载的那几步也一样）；设置图标上的红点还在
   const hideAfter = Number(settings?.general.updateHideSeconds ?? 15)
   useEffect(() => {
+    document.documentElement.dataset.motion = settings?.general.animations === false ? 'off' : 'on'
+  }, [settings?.general.animations])
+  useEffect(() => {
     if (!updateStep || !(hideAfter > 0)) return
     const timer = setTimeout(() => setUpdateLater(updateStep), hideAfter * 1000)
     return () => clearTimeout(timer)

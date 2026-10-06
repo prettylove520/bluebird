@@ -51,7 +51,7 @@ function resetTab(tab: SettingsTab, s: Settings, d: Settings): Settings {
   if (tab === 'look') {
     return {
       ...s,
-      general: { ...s.general, theme: d.general.theme, layout: d.general.layout, showHome: d.general.showHome, homeBackground: d.general.homeBackground },
+      general: { ...s.general, theme: d.general.theme, layout: d.general.layout, showHome: d.general.showHome, homeBackground: d.general.homeBackground, animations: d.general.animations },
       reading: { ...s.reading, density: d.reading.density, darkMail: d.reading.darkMail }
     }
   }
@@ -415,6 +415,9 @@ export function SettingsDialog(props: Props) {
 
             {tab === 'look' && (
               <div className="set-list">
+                <Row title="界面动画" hint="翻页、菜单弹出、列表淡入等过渡效果。觉得干扰或电脑比较卡可以关掉；Windows 开了「减少动画」时也会自动不播放">
+                  <Switch label="界面动画" checked={general.animations !== false} onChange={(animations) => setGeneral({ animations })} />
+                </Row>
                 <Row title="颜色" hint="选择浅色或深色，或者跟随 Windows 的设置">
                   <Segmented
                     value={general.theme}

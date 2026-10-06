@@ -61,6 +61,8 @@ export interface GeneralSettings {
   defaultAccountId: string
   /** 左下角的更新提示过多少秒自动收起，0 是不自动收起（设置图标上的红点一直在） */
   updateHideSeconds: number
+  /** 界面动效（翻页、菜单弹出、列表淡入等），默认开 */
+  animations?: boolean
 }
 
 export interface ReadingSettings {

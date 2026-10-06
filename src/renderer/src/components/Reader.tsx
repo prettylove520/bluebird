@@ -581,7 +581,7 @@ export function Reader(props: Props) {
       </div>
 
       <div className="reader-scroll" ref={scrollRef}>
-        <div className="mail-wrap">
+        <div className="mail-wrap" key={`${detail.accountId}-${detail.folder}-${detail.uid}`}>
           <h2 className="mail-subject">
             {detail.subject || '（无主题）'}
             {thread && <span className="thread-badge">{thread.length} 封邮件</span>}

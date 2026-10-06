@@ -4884,3 +4884,121 @@ kbd {
 .draft-bar .link-btn:disabled { opacity: .4; cursor: default; }
 .draft-check { flex: none; margin: 0 4px 0 0; width: 16px; height: 16px; }
 .sched-item.picked { background: var(--select, rgba(79, 140, 255, 0.12)); }
+
+/* ---------- 界面动效 ----------
+   原则：快、轻、不挡操作；只在「出现」时播放，不在每次刷新时重放。
+   「设置 → 外观 → 界面动画」关掉，或者 Windows 开了「减少动画」，这一整块都不生效。 */
+:root {
+  --ease-out: cubic-bezier(0.22, 0.8, 0.28, 1);
+  --ease-pop: cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+
+@keyframes bb-fade {
+  from { opacity: 0; }
+}
+@keyframes bb-rise {
+  from { opacity: 0; transform: translateY(8px); }
+}
+@keyframes bb-row {
+  from { opacity: 0; transform: translateY(6px); }
+}
+@keyframes bb-pop {
+  from { opacity: 0; transform: translateY(6px) scale(0.96); }
+}
+@keyframes bb-drop {
+  from { opacity: 0; transform: translateY(-4px) scale(0.97); }
+}
+@keyframes bb-toast {
+  from { opacity: 0; transform: translateY(14px) scale(0.97); }
+}
+@keyframes bb-in-right {
+  from { opacity: 0; transform: translateX(28px); }
+}
+@keyframes bb-in-left {
+  from { opacity: 0; transform: translateX(-20px); }
+}
+
+/* 翻页：整屏模式下，列表 ⇄ 邮件 互相滑入 */
+.app.wide.reading > .reader {
+  animation: bb-in-right 0.26s var(--ease-out) backwards;
+}
+.app.wide:not(.reading):not(.home-on) > .list-pane {
+  animation: bb-in-left 0.24s var(--ease-out) backwards;
+}
+/* 换一封邮件：正文淡入并轻轻上浮 */
+.mail-wrap {
+  animation: bb-rise 0.24s var(--ease-out) backwards;
+}
+.reader-empty {
+  animation: bb-fade 0.3s ease backwards;
+}
+
+/* 邮件列表：新出现的行（切换文件夹、翻到下一页、来了新邮件）淡入，开头几行依次错开 */
+.list > .msg,
+.list .msg {
+  animation: bb-row 0.22s var(--ease-out) backwards;
+}
+.list .msg:nth-child(2) { animation-delay: 15ms; }
+.list .msg:nth-child(3) { animation-delay: 30ms; }
+.list .msg:nth-child(4) { animation-delay: 45ms; }
+.list .msg:nth-child(5) { animation-delay: 60ms; }
+.list .msg:nth-child(6) { animation-delay: 75ms; }
+.list .msg:nth-child(7) { animation-delay: 90ms; }
+.list .msg:nth-child(8) { animation-delay: 105ms; }
+.list .msg:nth-child(n + 9) { animation-delay: 120ms; }
+
+/* 弹窗、菜单、提示 */
+.overlay {
+  animation: bb-fade 0.16s ease backwards;
+}
+.overlay > .dialog {
+  animation: bb-pop 0.22s var(--ease-pop) backwards;
+}
+.menu {
+  transform-origin: top left;
+  animation: bb-drop 0.15s var(--ease-out) backwards;
+}
+.recipient-menu {
+  transform-origin: top left;
+  animation: bb-drop 0.14s var(--ease-out) backwards;
+}
+.toast {
+  animation: bb-toast 0.26s var(--ease-pop) backwards;
+}
+/* 设置里切换分页：内容淡入 */
+.dialog-body .set-list {
+  animation: bb-rise 0.22s var(--ease-out) backwards;
+}
+
+/* 悬停、选中的颜色渐变 */
+.msg,
+.menu-item,
+.rail-btn,
+.cat-tabs button,
+.tabs button,
+.row-actions button {
+  transition: background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease;
+}
+/* 按下去有一点回弹 */
+.rail-btn:active,
+.cat-tabs button:active,
+.pill-btn:active,
+.reader .toolbar .tool:active,
+.row-actions button:active {
+  transform: scale(0.94);
+}
+
+/* 关闭：设置里关掉了，或系统要求减少动画 */
+html[data-motion='off'] *,
+html[data-motion='off'] *::before,
+html[data-motion='off'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+  }
+}

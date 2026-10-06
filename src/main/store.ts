@@ -47,7 +47,7 @@ const BACKUP_KEY_ID = '__backup__'
 const defaultSettings: Settings = {
   proxy: { enabled: false, host: '127.0.0.1', port: 7890 },
   oauth: { googleClientId: '', googleClientSecret: '', microsoftClientId: '' },
-  general: { theme: 'system', layout: 'wide', showHome: true, homeBackground: 'auto', closeToTray: false, launchAtLogin: false, autoUpdate: true, defaultAccountId: '', updateHideSeconds: 15 },
+  general: { theme: 'system', layout: 'wide', showHome: true, homeBackground: 'auto', closeToTray: false, launchAtLogin: false, autoUpdate: true, defaultAccountId: '', updateHideSeconds: 15, animations: true },
   reading: {
     markReadOnOpen: true,
     autoLoadImages: false,
