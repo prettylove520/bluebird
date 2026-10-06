@@ -211,6 +211,8 @@ export default function App() {
   const [inviteBusy, setInviteBusy] = useState('')
   // 刚删除、归档、移动的邮件：先从列表里藏起来，过几秒才真正让服务器执行，这期间可以撤销
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
+  /** 最近一次在哪个邮箱里删除、归档、移动过邮件：在「所有收件箱」里点「已删除」时，优先看这个邮箱的 */
+  const lastActed = useRef<string>('')
   const pendingOps = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; commit: () => void; undo: () => void }>())
   // 正在看的会话里，你自己发出去的回复（从「已发送」里找来的）。owner 是这个会话在列表里那一行的键
   const [extras, setExtras] = useState<{ owner: string; list: MessageSummary[] } | null>(null)
@@ -730,7 +732,9 @@ export default function App() {
 
   /** 图标栏上的「草稿、已发送、已删除」指的是当前账号的对应文件夹 */
   const activeAccountId = (): string | undefined =>
-    view && accounts.some((a) => a.id === view.accountId) ? view.accountId : detail?.accountId ?? accounts[0]?.id
+    view && accounts.some((a) => a.id === view.accountId)
+      ? view.accountId
+      : detail?.accountId ?? (accounts.some((a) => a.id === lastActed.current) ? lastActed.current : undefined) ?? accounts[0]?.id
 
   const onRail = (t: RailTarget): void => {
     setDrawer(false)
@@ -747,8 +751,14 @@ export default function App() {
     }
     const id = activeAccountId()
     const f = id ? folders[id]?.find((x) => x.specialUse === t) : undefined
-    if (id && f) selectFolder(id, f.path)
-    else notify('这个邮箱没有对应的文件夹', 'error')
+    if (id && f) {
+      selectFolder(id, f.path)
+      // 有好几个邮箱、又是从「所有收件箱」过来的：告诉他现在看的是哪个邮箱的，别的邮箱在「全部账号和文件夹」里
+      if (accounts.length > 1 && !(view && accounts.some((a) => a.id === view.accountId))) {
+        const email = accounts.find((a) => a.id === id)?.email
+        if (email) notify(`现在看的是 ${email} 的${t === 'trash' ? '已删除' : t === 'sent' ? '已发送' : '草稿箱'}。其他邮箱的在左边「全部账号和文件夹」里`)
+      }
+    } else notify('这个邮箱没有对应的文件夹', 'error')
   }
 
   // ---------- 草稿 ----------
@@ -1067,6 +1077,7 @@ export default function App() {
       if (unseen) adjustUnseen({ accountId: g.accountId, folder: g.folder, uid: 0 }, -unseen)
     }
     const accountIds = [...new Set(groups.map((g) => g.accountId))]
+    lastActed.current = accountIds[accountIds.length - 1] ?? lastActed.current
     const unhide = (): void =>
       setHiddenKeys((h) => {
         const next = new Set(h)
