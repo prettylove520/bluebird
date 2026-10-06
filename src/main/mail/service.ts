@@ -327,10 +327,50 @@ export async function searchEverywhere(account: Account, query: string): Promise
 // 还是没有，就把最近的邮件头取下来，在本地比对主题、发件人、收件人。记住哪个账号用了哪一步，日志里能看到。
 const LOCAL_SCAN = 500
 
+/**
+ * 文字里是否有这个词。服务器是按「包含这几个字母」来找的：搜 MUSE 会连 museum、amused 一起返回。
+ * 英文、数字按整词比对（前后不能紧挨着别的字母数字）；中文等没有空格分词的文字，包含就算。
+ */
+function containsTerm(text: string, q: string): boolean {
+  const t = (text || '').toLowerCase()
+  const needle = q.trim().toLowerCase()
+  if (!needle) return false
+  if (!/[\p{L}\p{N}]/u.test(needle[0]) || !/[\p{L}\p{N}]/u.test(needle[needle.length - 1])) return t.includes(needle)
+  const esc = needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s+')
+  const cjk = /[㐀-鿿぀-ヿ가-힯]/
+  const lead = cjk.test(needle[0]) ? '' : '(?<![\\p{L}\\p{N}])'
+  const tail = cjk.test(needle[needle.length - 1]) ? '' : '(?![\\p{L}\\p{N}])'
+  try {
+    return new RegExp(lead + esc + tail, 'u').test(t)
+  } catch {
+    return t.includes(needle)
+  }
+}
+
 function matchesLocal(m: MessageSummary, q: string): boolean {
-  const needle = q.toLowerCase()
   const hay = [m.subject, ...m.from.flatMap((a) => [a.name, a.address]), ...m.to.flatMap((a) => [a.name, a.address])]
-  return hay.some((t) => (t || '').toLowerCase().includes(needle))
+  return hay.some((t) => containsTerm(t || '', q))
+}
+
+/** 邮件头对不上的，再下载正文开头一段核对（服务器的正文搜索只是「包含」，不一定真是这个词） */
+const BODY_CHECK = 40
+async function bodyHas(client: ImapFlow, uids: number[], q: string): Promise<Set<number>> {
+  const ok = new Set<number>()
+  if (!uids.length) return ok
+  const raws: { uid: number; source: Buffer }[] = []
+  for await (const m of client.fetch(uids, { uid: true, source: { maxLength: 65536 } }, { uid: true })) {
+    if (m.source) raws.push({ uid: m.uid, source: m.source })
+  }
+  for (const r of raws) {
+    try {
+      const parsed = await simpleParser(r.source, { skipImageLinks: true, skipTextToHtml: true, skipTextLinks: true })
+      const text = [parsed.text || '', parsed.html ? htmlToText(parsed.html) : ''].join('\n')
+      if (containsTerm(text, q)) ok.add(r.uid)
+    } catch {
+      // 解析不了的不算命中
+    }
+  }
+  return ok
 }
 
 export async function searchMessages(
@@ -357,17 +397,38 @@ export async function searchMessages(
           return null
         }
       }
-      const finish = async (uids: number[], total = uids.length): Promise<MessagePage> => {
+      const finish = async (uids: number[]): Promise<MessagePage> => {
         const latest = [...uids].sort((a, b) => b - a).slice(0, 100)
         if (!latest.length) return { messages: [], total: 0, hasMore: false }
-        const messages = await collect(client, account, path, latest, true)
+        let messages = await collect(client, account, path, latest, true)
         messages.sort((a, b) => b.uid - a.uid)
-        return { messages, total, hasMore: false }
+        // 服务器按「包含」来找，会带出不相干的邮件（MUSE → museum）：这里再严格核对一遍。
+        // Gmail 的搜索自己是按词来的，不再核对
+        if (!isGmail) {
+          const hit = messages.filter((m) => matchesLocal(m, q))
+          const rest = messages.filter((m) => !matchesLocal(m, q)).slice(0, BODY_CHECK)
+          let inBody = new Set<number>()
+          try {
+            inBody = await bodyHas(client, rest.map((m) => m.uid), q)
+          } catch (err) {
+            if (!client.usable || isConnectionError(err)) throw err
+            console.warn(`[搜索 ${account.email}] 核对正文失败：`, (err as Error).message)
+          }
+          const before = messages.length
+          messages = messages.filter((m) => hit.includes(m) || inBody.has(m.uid))
+          if (messages.length < before) console.warn(`[搜索 ${account.email}] 服务器返回 ${before} 封，核对后留下 ${messages.length} 封`)
+        }
+        return { messages, total: messages.length, hasMore: false }
       }
 
       // 第一步：一次问完
       const first = await ask(isGmail ? { gmraw: q } : { or: [{ subject: q }, { from: q }, { to: q }, { body: q }] })
-      if (first?.length || isGmail) return finish(first || [])
+      if (isGmail) return finish(first || [])
+      if (first?.length) {
+        const page = await finish(first)
+        // 服务器返回的全是不相干的邮件（有的邮箱不认搜索条件，直接返回一大堆）：核对后没有留下，就继续往下找
+        if (page.messages.length || !deep) return page
+      }
 
       // 全部邮箱搜索时，只有收件箱和已发送这两个主要文件夹才往下找，其余的问一次就算了，免得搜索拖太久
       if (!deep) return { messages: [], total: 0, hasMore: false }
