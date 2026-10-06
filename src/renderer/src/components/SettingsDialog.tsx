@@ -382,6 +382,15 @@ export function SettingsDialog(props: Props) {
                 <Row title="自动检查更新" hint="定时检查有没有新版本，有的话先提醒你，由你决定要不要下载；下载好以后再问你要不要马上重启安装。更新要连 GitHub，在国内一般需要开着代理">
                   <Switch label="自动检查更新" checked={general.autoUpdate !== false} onChange={(autoUpdate) => setGeneral({ autoUpdate })} />
                 </Row>
+                <Row title="更新提示自动隐藏" hint="左下角的新版本提示过一会儿自己收起来，不再一直挂着。收起后设置图标上的红点还在，到「设置 → 关于」随时可以更新">
+                  <select value={String(general.updateHideSeconds ?? 15)} onChange={(e) => setGeneral({ updateHideSeconds: Number(e.target.value) })}>
+                    <option value="8">8 秒后</option>
+                    <option value="15">15 秒后</option>
+                    <option value="30">30 秒后</option>
+                    <option value="60">1 分钟后</option>
+                    <option value="0">不自动隐藏</option>
+                  </select>
+                </Row>
                 <Row title="恢复全部默认设置" hint="把通用、外观、通知、阅读、写信这几页全部换回刚装好时的样子。邮箱账号、代理地址、浏览器登录的 Client ID、模板和发件人名单都不会动">
                   <button className="ghost-btn bordered" onClick={restoreAll} disabled={!defaults}>
                     全部恢复默认

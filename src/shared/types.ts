@@ -59,6 +59,8 @@ export interface GeneralSettings {
   homeBackground: string
   /** 写新邮件时默认用哪个账号，空字符串表示跟随当前查看的账号 */
   defaultAccountId: string
+  /** 左下角的更新提示过多少秒自动收起，0 是不自动收起（设置图标上的红点一直在） */
+  updateHideSeconds: number
 }
 
 export interface ReadingSettings {

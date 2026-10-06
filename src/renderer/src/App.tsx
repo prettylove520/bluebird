@@ -246,6 +246,13 @@ export default function App() {
   /** 有新版本等着处理（发现了没下载，或者下载好了没安装） */
   const updateDue = update?.state === 'available' || update?.state === 'ready'
   const updateStep = update && (update.state === 'available' || update.state === 'downloading' || update.state === 'ready') ? `${update.state}${update.version ?? ''}` : ''
+  // 提示挂一会儿就自己收起来（点「下载更新」后在下载的那几步也一样）；设置图标上的红点还在
+  const hideAfter = Number(settings?.general.updateHideSeconds ?? 15)
+  useEffect(() => {
+    if (!updateStep || !(hideAfter > 0)) return
+    const timer = setTimeout(() => setUpdateLater(updateStep), hideAfter * 1000)
+    return () => clearTimeout(timer)
+  }, [updateStep, hideAfter])
   const remoteAllowed = useRef(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const changeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
