@@ -55,6 +55,7 @@ const defaultSettings: Settings = {
     showPreview: true,
     density: 'comfortable',
     confirmDelete: false,
+    undoRemoveSeconds: 6,
     smartInbox: true,
     afterRemove: 'next',
     threads: true,
@@ -106,7 +107,7 @@ function mergeSettings(raw?: Partial<Settings> & { notifications?: boolean }): S
     proxy: cleanProxy({ ...d.proxy, ...raw?.proxy }),
     oauth: { ...d.oauth, ...raw?.oauth },
     general: { ...d.general, ...raw?.general },
-    reading: { ...d.reading, ...raw?.reading },
+    reading: { ...d.reading, ...raw?.reading, undoRemoveSeconds: clampUndo(raw?.reading?.undoRemoveSeconds, d.reading.undoRemoveSeconds) },
     compose: { ...d.compose, ...raw?.compose, undoSeconds: clampUndo(raw?.compose?.undoSeconds, d.compose.undoSeconds) },
     // 旧版本只有一个 notifications 开关
     notify: { ...d.notify, ...(raw?.notifications === false ? { enabled: false } : {}), ...raw?.notify },

@@ -1046,7 +1046,6 @@ export default function App() {
    * 移除类操作（删除、归档、移动）的公共部分：先从界面上拿掉，等几秒再让服务器执行，这几秒里可以撤销。
    * instant：不等，马上执行（彻底删除这种已经确认过、也没法撤销的）
    */
-  const UNDO_MS = 6000
   const removeRefs = (
     refs: MsgRef[],
     run: (g: { accountId: string; folder: string; uids: number[] }) => Promise<unknown>,
@@ -1054,6 +1053,9 @@ export default function App() {
     instant = false
   ): void => {
     if (!refs.length) return
+    // 设置里可以调撤销的秒数；关闭（0）就和「马上执行」一样
+    const undoMs = Math.max(0, Math.min(60, Number(settings?.reading.undoRemoveSeconds ?? 6))) * 1000
+    if (!undoMs) instant = true
     const list = withState(refs)
     const keys = new Set(list.map(keyOf))
     const backup = messages.filter((m) => keys.has(keyOf(m)))
@@ -1094,7 +1096,7 @@ export default function App() {
       pendingOps.current.delete(id)
       closeToast()
       commit()
-    }, UNDO_MS)
+    }, undoMs)
     pendingOps.current.set(id, {
       timer,
       commit,

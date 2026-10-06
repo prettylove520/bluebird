@@ -74,6 +74,8 @@ export interface ReadingSettings {
   showPreview: boolean
   density: 'comfortable' | 'compact'
   confirmDelete: boolean
+  /** 删除、归档、移动之后可以「撤销」的秒数；0 表示不留撤销、立即执行 */
+  undoRemoveSeconds: number
   /** 在收件箱里显示「个人 / 通知 / 订阅」分类 */
   smartInbox: boolean
   /** 删除或归档当前邮件后：打开下一封，还是回到列表 */

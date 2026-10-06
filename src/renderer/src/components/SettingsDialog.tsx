@@ -551,6 +551,16 @@ export function SettingsDialog(props: Props) {
                 <Row title="删除前先确认" hint="不开也不怕误删：删除、归档、移动之后几秒内，底部会有「撤销」（也可以按 Ctrl+Z）。打开这一项，每次删除前还会再问一遍。彻底删除总会先确认">
                   <Switch label="删除前先确认" checked={reading.confirmDelete} onChange={(confirmDelete) => setReading({ confirmDelete })} />
                 </Row>
+                <Row title="删除撤销" hint="删除、归档、移动之后，底部会留一条「撤销」（也可以按 Ctrl+Z），这几秒里服务器那边还没动。选「关闭」就立刻执行，不再留撤销">
+                  <select value={String(reading.undoRemoveSeconds ?? 6)} onChange={(e) => setReading({ undoRemoveSeconds: Number(e.target.value) })}>
+                    <option value="0">关闭</option>
+                    <option value="3">3 秒</option>
+                    <option value="6">6 秒</option>
+                    <option value="10">10 秒</option>
+                    <option value="20">20 秒</option>
+                    <option value="30">30 秒</option>
+                  </select>
+                </Row>
                 <Row title="删除或归档后" hint="处理完当前这封邮件之后显示什么">
                   <Segmented
                     value={reading.afterRemove}
