@@ -575,6 +575,11 @@ export default function App() {
       if (cached.length) {
         fromCache = true
         setMessages(v.accountId === ALL ? cached.sort(byDateDesc) : cached)
+      } else if (pages.length && pages.every((p) => p)) {
+        // 每个邮箱的缓存都有、而且都是空的：直接显示「这里没有邮件」，后台再去核对
+        fromCache = true
+        setMessages([])
+        setListLoading(false)
       }
     }
     // 在所有邮箱里搜索：每个账号各搜各的，谁先回来先显示谁的

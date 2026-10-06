@@ -73,6 +73,7 @@ import {
   listFolders,
   emptyFolder,
   listMessages,
+  findSpecialPath,
   markAll,
   moveMessage,
   searchMessages,
@@ -1477,11 +1478,22 @@ app.whenReady().then(() => {
   setTimeout(tick, 5000)
   setInterval(tick, 20000)
   // 稍后在后台把「已发送」里最近的收件人记成联系人（一个账号一个账号来，失败了也无所谓）
+  // 先把每个邮箱的「已删除」「已发送」最新一页取回来存进缓存（点「已删除」「已发送」时马上就有，不用现等几秒），再收集联系人
   setTimeout(() => {
     void (async () => {
+      for (const a of getAccounts()) {
+        for (const use of ['trash', 'sent'] as const) {
+          try {
+            const path = await findSpecialPath(a, use)
+            if (path) putCachedList(a.id, path, await listMessages(a, path, undefined, 'bg'))
+          } catch {
+            // 取不到就算了，点开时再现取
+          }
+        }
+      }
       for (const a of getAccounts()) await warmContacts(a).catch(() => undefined)
     })()
-  }, 25000)
+  }, 15000)
 
   // 电脑睡眠唤醒后，旧连接基本都断了，全部重建
   powerMonitor.on('resume', () => {
