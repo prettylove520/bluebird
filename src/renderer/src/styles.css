@@ -4383,6 +4383,11 @@ kbd {
   color: var(--accent-ink);
   font-size: 13.5px;
   box-shadow: 0 10px 30px rgba(47, 115, 246, 0.4);
+  /* 横幅盖在顶部的拖动区上：不声明不可拖动的话，点击会被当成拖窗口，按钮完全没反应 */
+  -webkit-app-region: no-drag;
+}
+.update-banner * {
+  -webkit-app-region: no-drag;
 }
 .update-banner .update-go {
   padding: 6px 14px;

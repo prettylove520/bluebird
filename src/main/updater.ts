@@ -79,6 +79,7 @@ export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
 
 /** 用户点了「下载更新」：开始下载，下载好了会变成 ready，由用户决定要不要马上重启安装 */
 export async function downloadUpdate(): Promise<UpdateStatus> {
+  console.warn('[更新] 收到下载请求，当前状态：' + status.state)
   if (status.state !== 'available') return status
   set({ state: 'downloading', version: status.version, percent: 0 })
   try {
