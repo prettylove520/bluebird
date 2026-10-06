@@ -109,6 +109,14 @@ export interface NotifySettings {
   checkSeconds: number
 }
 
+/** 邮件翻译（DeepL）。密钥不在这里，单独加密保存 */
+export interface TranslateSettings {
+  /** 翻译成哪种语言（DeepL 的语言代码，ZH 是简体中文） */
+  target: string
+  /** 连接 DeepL 时走不走代理 */
+  useProxy: boolean
+}
+
 export interface Settings {
   proxy: ProxySettings
   oauth: OAuthSettings
@@ -116,6 +124,7 @@ export interface Settings {
   reading: ReadingSettings
   compose: ComposeSettings
   notify: NotifySettings
+  translate: TranslateSettings
 }
 
 export interface Template {

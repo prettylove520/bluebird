@@ -38,7 +38,8 @@ import { appendFileSync, existsSync, readFileSync, renameSync, statSync, unlinkS
 import { addOAuthAccount, addPasswordAccount, listPresets, reauthAccount, removeAccount, updateAccount, type AccountPatch } from './accounts'
 import { detect } from './presets'
 import { cancelOAuth } from './oauth'
-import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, saveSettings } from './store'
+import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setTranslateKey } from './store'
+import { translateTexts, translateUsage } from './translate'
 import { httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
 import { checkForUpdate, initUpdater, installUpdate, updateStatus } from './updater'
@@ -1120,6 +1121,24 @@ function registerIpc(): void {
   })
 
   // 设置里的「发一条测试通知」：用来确认系统通知到底能不能弹出来
+  // 翻译。密钥只进不出：界面只知道「填了没有」和最后四位
+  const translateInfo = (): { hasKey: boolean; tail: string } => {
+    const key = getTranslateKey() || ''
+    return { hasKey: !!key, tail: key ? key.replace(/:fx$/, '').slice(-4) : '' }
+  }
+  handle('translate:info', () => translateInfo())
+  handle('translate:setKey', async (key: string) => {
+    const k = String(key || '').trim()
+    if (k) {
+      if (!/^[A-Za-z0-9:_-]{20,80}$/.test(k)) throw new Error('这不像是 DeepL 的密钥。密钥在 DeepL 网站的「账户 → API 密钥」里，一般是一长串字母数字，免费版以 :fx 结尾')
+      // 先试一下能不能用，不能用就不保存
+      await translateUsage(k)
+    }
+    setTranslateKey(k)
+    return translateInfo()
+  })
+  handle('translate:usage', () => translateUsage())
+  handle('translate:texts', (texts: string[], xml: boolean) => translateTexts(texts, !!xml))
   handle('update:status', () => updateStatus())
   handle('update:check', () => checkForUpdate(true))
   handle('update:install', () => {

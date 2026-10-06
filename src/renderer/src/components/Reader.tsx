@@ -28,6 +28,14 @@ interface Props {
   unsubscribed: boolean
   unsubscribing: boolean
   onUnsubscribe: () => void
+  /** 翻译：off 是原文，loading 正在翻译，on 现在看到的是译文 */
+  translation: 'off' | 'loading' | 'on'
+  /** 显示译文时的一句说明，比如「已从英语翻译成简体中文」 */
+  translationNote: string
+  /** 这封看起来是外语，主动提示可以翻译 */
+  suggestTranslate: boolean
+  onTranslate: () => void
+  onShowOriginal: () => void
   /** 这个发件人第一次来信：问一下接受还是屏蔽 */
   gate: boolean
   onAcceptSender: () => void
@@ -474,6 +482,22 @@ export function Reader(props: Props) {
                 {props.unsubscribe && (
                   <button className="link-btn" onClick={props.onUnsubscribe} disabled={props.unsubscribing}>
                     {props.unsubscribing ? '正在退订…' : '退订'}
+                  </button>
+                )}
+              </div>
+            )}
+
+            {(props.translation !== 'off' || props.suggestTranslate) && (
+              <div className="notice translate">
+                <Icon name="globe" />
+                <span>{props.translation === 'loading' ? '正在翻译…' : props.translation === 'on' ? props.translationNote : '这封邮件看起来是外语'}</span>
+                {props.translation === 'on' ? (
+                  <button className="link-btn" onClick={props.onShowOriginal}>
+                    看原文
+                  </button>
+                ) : (
+                  <button className="link-btn" onClick={props.onTranslate} disabled={props.translation === 'loading'}>
+                    {props.translation === 'loading' ? '请稍候' : '翻译'}
                   </button>
                 )}
               </div>

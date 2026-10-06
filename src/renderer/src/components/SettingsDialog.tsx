@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { Account, AppInfo, ServerConfig, Settings, Template, UpdateStatus, UserData } from '../../../shared/types'
 import { api } from '../api'
 import { accountTags, tagMark } from '../utils'
+import { TARGET_LANGS } from '../translate'
 import { HOME_SCENES, resolveScene, sceneForHour } from './Home'
 import { Icon, type IconName } from './Icon'
 import { BackupPanel } from './BackupPanel'
 
-export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'notify' | 'senders' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
+export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'translate' | 'notify' | 'senders' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
 
 interface Props {
   accounts: Account[]
@@ -32,7 +33,7 @@ interface Props {
 }
 
 // 这几页的内容是「设置」：改完要点保存，也可以恢复默认。其余几页（账号、发件人、备份、关于）各有各的保存方式
-const SETTING_TABS: SettingsTab[] = ['general', 'look', 'notify', 'reading', 'compose', 'proxy', 'oauth']
+const SETTING_TABS: SettingsTab[] = ['general', 'look', 'notify', 'reading', 'compose', 'translate', 'proxy', 'oauth']
 
 /** 把某一页的设置换成默认值，返回换好的整份设置 */
 function resetTab(tab: SettingsTab, s: Settings, d: Settings): Settings {
@@ -52,6 +53,7 @@ function resetTab(tab: SettingsTab, s: Settings, d: Settings): Settings {
   if (tab === 'notify') return { ...s, notify: { ...d.notify } }
   if (tab === 'reading') return { ...s, reading: { ...d.reading, density: s.reading.density, darkMail: s.reading.darkMail } }
   if (tab === 'compose') return { ...s, compose: { ...d.compose } }
+  if (tab === 'translate') return { ...s, translate: { ...d.translate } }
   if (tab === 'proxy') return { ...s, proxy: { ...d.proxy } }
   return s
 }
@@ -66,6 +68,7 @@ const TABS: { id: SettingsTab; label: string; icon: IconName; color: string; gap
   { id: 'notify', label: '通知', icon: 'bell', color: '#2aa7d8' },
   { id: 'reading', label: '阅读', icon: 'mailOpen', color: '#1fb5a5', gap: true },
   { id: 'compose', label: '写信', icon: 'pen', color: '#1fb5a5' },
+  { id: 'translate', label: '翻译', icon: 'globe', color: '#1fb5a5' },
   { id: 'proxy', label: '代理', icon: 'all', color: '#3dae6b', gap: true },
   { id: 'oauth', label: '浏览器登录', icon: 'external', color: '#3dae6b' },
   { id: 'backup', label: '备份与恢复', icon: 'share', color: '#e8a23a', gap: true },
@@ -76,6 +79,7 @@ const SHORTCUTS: [string, string][] = [
   ['↑ ↓ 或 K J', '上一封 / 下一封'],
   ['N 或 C', '写邮件'],
   ['R / A / F', '回复 / 全部回复 / 转发'],
+  ['T', '翻译 / 显示原文'],
   ['S', '加星标 / 取消星标'],
   ['U', '标为已读 / 未读'],
   ['P', '置顶 / 取消置顶'],
@@ -239,6 +243,7 @@ export function SettingsDialog(props: Props) {
   const setReading = (p: Partial<Settings['reading']>): void => apply({ ...draft, reading: { ...draft.reading, ...p } })
   const setCompose = (p: Partial<Settings['compose']>): void => apply({ ...draft, compose: { ...draft.compose, ...p } })
   const setNotify = (p: Partial<Settings['notify']>): void => apply({ ...draft, notify: { ...draft.notify, ...p } })
+  const setTranslate = (p: Partial<Settings['translate']>): void => apply({ ...draft, translate: { ...draft.translate, ...p } })
 
   /** 保存；成功返回 true */
   const saveNow = async (): Promise<boolean> => {
@@ -272,7 +277,7 @@ export function SettingsDialog(props: Props) {
   /** 全部设置换成默认值：账号、代理地址、浏览器登录用的 Client ID 不动 */
   const restoreAll = (): void => {
     if (!defaults) return
-    const next: Settings = { ...defaults, proxy: draft.proxy, oauth: draft.oauth }
+    const next: Settings = { ...defaults, proxy: draft.proxy, oauth: draft.oauth, translate: draft.translate }
     if (same(next, draft)) props.notify('所有设置已经是默认值了')
     else {
       apply(next)
@@ -543,6 +548,27 @@ export function SettingsDialog(props: Props) {
                 </Row>
                 <TemplateEditor templates={props.data.templates} onChange={(templates) => props.onSaveData({ templates })} confirm={props.confirm} />
                 <QuickReplyEditor items={props.data.quickReplies} onChange={(quickReplies) => props.onSaveData({ quickReplies })} confirm={props.confirm} />
+              </div>
+            )}
+
+            {tab === 'translate' && (
+              <div className="set-list">
+                <p className="muted">
+                  看不懂的外语邮件，点邮件上方的「翻译」就能换成中文，版式、图片、链接都保持原样。翻译用的是 DeepL：需要你在 DeepL 网站注册并拿到一个 API 密钥，免费版每个月可以翻译 50 万个字符，日常看邮件足够。
+                </p>
+                <TranslateKeyRow notify={props.notify} confirm={props.confirm} />
+                <Row title="翻译成" hint="外语邮件翻译成哪种语言">
+                  <select value={draft.translate.target} onChange={(e) => setTranslate({ target: e.target.value })}>
+                    {TARGET_LANGS.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                <Row title="通过代理连接 DeepL" hint="一般不用开，DeepL 在国内可以直接连。连不上的时候再打开，走「代理」那一页里设置的代理">
+                  <Switch label="通过代理连接 DeepL" checked={draft.translate.useProxy} onChange={(useProxy) => setTranslate({ useProxy })} />
+                </Row>
               </div>
             )}
 
@@ -840,6 +866,88 @@ export function SettingsDialog(props: Props) {
             </footer>
           ))}
       </div>
+    </div>
+  )
+}
+
+/** DeepL 密钥：填写、检查、删除。密钥保存后界面再也拿不到它，只显示最后四位 */
+function TranslateKeyRow({ notify, confirm }: { notify: (msg: string, kind?: 'ok' | 'error') => void; confirm: Props['confirm'] }) {
+  const [info, setInfo] = useState<{ hasKey: boolean; tail: string } | null>(null)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [usage, setUsage] = useState<string>('')
+  const loadUsage = (): void => {
+    api
+      .translateUsage()
+      .then((u) => setUsage(u.limit ? `这个月已经用了 ${u.used.toLocaleString()} / ${u.limit.toLocaleString()} 个字符` : `这个月已经用了 ${u.used.toLocaleString()} 个字符`))
+      .catch((err) => setUsage((err as Error).message))
+  }
+  useEffect(() => {
+    api
+      .translateInfo()
+      .then((i) => {
+        setInfo(i)
+        if (i.hasKey) loadUsage()
+      })
+      .catch(() => undefined)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+  const save = async (key: string): Promise<void> => {
+    setBusy(true)
+    try {
+      const i = await api.translateSetKey(key)
+      setInfo(i)
+      setValue('')
+      setUsage('')
+      if (i.hasKey) {
+        notify('密钥可以用，已经保存')
+        loadUsage()
+      } else notify('密钥已删除')
+    } catch (err) {
+      notify((err as Error).message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className="set-block">
+      <div className="set-title">DeepL 密钥</div>
+      <div className="set-hint">
+        {info?.hasKey ? `已经填好了（末四位 ${info.tail}）。${usage}` : '还没有填。'}
+        密钥只保存在这台电脑上，用 Windows 系统加密。
+        <button className="link-btn" onClick={() => void api.openExternal('https://www.deepl.com/zh/your-account/keys')}>
+          去 DeepL 网站拿密钥
+        </button>
+      </div>
+      <form
+        className="addr-add"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (value.trim()) void save(value.trim())
+        }}
+      >
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={info?.hasKey ? '要换一个密钥就填在这里' : '把密钥粘贴到这里，免费版的以 :fx 结尾'}
+          autoComplete="off"
+          aria-label="DeepL 密钥"
+        />
+        <button type="submit" className="primary-btn" disabled={busy || !value.trim()}>
+          {busy ? '正在检查…' : '保存密钥'}
+        </button>
+        {info?.hasKey && (
+          <button
+            type="button"
+            className="ghost-btn"
+            disabled={busy}
+            onClick={() => confirm({ title: '删除 DeepL 密钥？', message: '删除后就不能翻译邮件了，以后可以再填。', confirmLabel: '删除', onConfirm: () => void save('') })}
+          >
+            删除
+          </button>
+        )}
+      </form>
     </div>
   )
 }

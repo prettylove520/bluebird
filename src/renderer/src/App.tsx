@@ -33,6 +33,7 @@ import { Reader } from './components/Reader'
 import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
 import { groupByThread, threadKeys } from './threads'
+import { TARGET_LANGS, langName, looksForeign, translateMail, type Translated } from './translate'
 import {
   accountTags,
   displayName,
@@ -218,6 +219,9 @@ export default function App() {
     onSubmit: (value: string) => Promise<void>
   } | null>(null)
   const [viewer, setViewer] = useState<ViewerState | null>(null)
+  // 正在看的邮件的翻译：key 是哪一封；loading 正在翻，on 已经换成译文
+  const [tr, setTr] = useState<{ key: string; state: 'loading' | 'on'; data?: Translated } | null>(null)
+  const trCache = useRef(new Map<string, Translated>())
   const viewerReq = useRef(0)
   // 异步加载时要读到最新的本地数据
   const dataRef = useRef(data)
@@ -1650,7 +1654,10 @@ export default function App() {
       { label: '回复', icon: 'reply', hint: 'R', separator: true, onClick: () => openCompose('reply') },
       { label: '全部回复', icon: 'replyAll', hint: 'A', onClick: () => openCompose('replyAll') },
       { label: '转发', icon: 'forward', hint: 'F', onClick: () => openCompose('forward') },
-      { label: '重新发送', icon: 'sent', onClick: () => resend(d) }
+      { label: '重新发送', icon: 'sent', onClick: () => resend(d) },
+      translatedNow
+        ? { label: '显示原文', icon: 'globe', hint: 'T', onClick: () => setTr(null) }
+        : { label: '翻译这封邮件', icon: 'globe', hint: 'T', onClick: translateOpen }
     ]
     if (sender) {
       const blockItems: MenuItem[] = [{ label: `屏蔽 ${sender}`, icon: 'ban', onClick: () => blockSender(sender) }]
@@ -1728,6 +1735,33 @@ export default function App() {
     fn(detail.accountId, detail.folder, detail.uid, index)
       .then((done) => save && done && notify('附件已保存'))
       .catch((err) => notify((err as Error).message, 'error'))
+  }
+
+  // ---------- 翻译 ----------
+  const translateOpen = (): void => {
+    if (!detail || !settings) return
+    const key = keyOf(detail)
+    const cacheKey = `${key}|${settings.translate.target}`
+    const hit = trCache.current.get(cacheKey)
+    if (hit) {
+      setTr({ key, state: 'on', data: hit })
+      return
+    }
+    if (tr?.key === key && tr.state === 'loading') return
+    setTr({ key, state: 'loading' })
+    translateMail(detail, api.translateTexts)
+      .then((data) => {
+        if (trCache.current.size > 40) trCache.current.clear()
+        trCache.current.set(cacheKey, data)
+        setTr((cur) => (cur && cur.key === key ? { key, state: 'on', data } : cur))
+      })
+      .catch((err) => {
+        setTr((cur) => (cur && cur.key === key ? null : cur))
+        const text = (err as Error).message
+        notify(text, 'error')
+        // 还没填密钥：直接带到填密钥的地方
+        if (/还没有填 DeepL 密钥/.test(text)) setDialog({ kind: 'settings', tab: 'translate' })
+      })
   }
 
   /** 在程序里直接看附件（图片、文字；PDF 会另开一个小窗口） */
@@ -2135,10 +2169,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sentLookup, sentTick])
 
-  // 换了一封邮件，附件预览就关掉
+  // 换了一封邮件，附件预览就关掉，翻译也回到原文
   useEffect(() => {
     setViewer(null)
+    setTr(null)
   }, [detail ? keyOf(detail) : ''])
+  // 读信页里显示的内容：开着翻译就是译文，否则是原文。回复、转发、打印用的始终是原文
+  const translatedNow = !!detail && !!tr && tr.state === 'on' && tr.key === keyOf(detail) && !!tr.data
+  const shownDetail = useMemo(
+    () => (detail && translatedNow && tr?.data ? { ...detail, subject: tr.data.subject, html: tr.data.html, text: tr.data.text } : detail),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [detail, translatedNow, tr?.data]
+  )
+  const foreign = useMemo(() => !!detail && looksForeign(detail), [detail])
 
   // 关窗口前，还在「可以撤销」那几秒里的删除、归档马上交给服务器去做。程序正在退出时不一定来得及做完——
   // 没做完的话邮件只是还留在原处，下次打开还在，不会丢
@@ -2432,6 +2475,11 @@ export default function App() {
         break
       case 'f':
         if (detail) openCompose('forward')
+        break
+      case 't':
+        if (!detail) return
+        if (translatedNow) setTr(null)
+        else translateOpen()
         break
       case 's':
         // 星标：勾选了就给勾选的加；没勾选时只给正在看的这一封加，不动会话里的其他邮件
@@ -2954,7 +3002,16 @@ export default function App() {
             onRefresh={() => refreshView()}
           />
           <Reader
-            detail={detail}
+            detail={shownDetail}
+            translation={translatedNow ? 'on' : detail && tr?.key === keyOf(detail) ? 'loading' : 'off'}
+            translationNote={
+              tr?.data
+                ? `已从${langName(tr.data.from)}翻译成${TARGET_LANGS.find((l) => l.id === settings.translate.target)?.label ?? '中文'}${tr.data.partial ? '（邮件比较长，只翻译了前面一部分）' : ''}`
+                : ''
+            }
+            suggestTranslate={foreign && settings.translate.target.startsWith('ZH')}
+            onTranslate={translateOpen}
+            onShowOriginal={() => setTr(null)}
             account={detailAccount}
             accountTag={detailAccount ? tags[detailAccount.id] : undefined}
             showAccount={accounts.length > 1}

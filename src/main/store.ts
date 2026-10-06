@@ -60,7 +60,8 @@ const defaultSettings: Settings = {
     gatekeeper: true
   },
   compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
-  notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 }
+  notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
+  translate: { target: 'ZH', useProxy: false }
 }
 
 /** 撤销发送等待的秒数：0 是关闭，最长 60 秒 */
@@ -80,7 +81,8 @@ function mergeSettings(raw?: Partial<Settings> & { notifications?: boolean }): S
     reading: { ...d.reading, ...raw?.reading },
     compose: { ...d.compose, ...raw?.compose, undoSeconds: clampUndo(raw?.compose?.undoSeconds, d.compose.undoSeconds) },
     // 旧版本只有一个 notifications 开关
-    notify: { ...d.notify, ...(raw?.notifications === false ? { enabled: false } : {}), ...raw?.notify }
+    notify: { ...d.notify, ...(raw?.notifications === false ? { enabled: false } : {}), ...raw?.notify },
+    translate: { ...d.translate, ...raw?.translate }
   }
 }
 
@@ -249,6 +251,27 @@ export function getBackupKey(): { key: string; salt: string } | undefined {
   }
 }
 
+/** 翻译密钥在 secrets.json 里用的名字（不是账号） */
+const TRANSLATE_KEY_ID = '__deepl__'
+
+export function getTranslateKey(): string | undefined {
+  const v = loadSecrets()[TRANSLATE_KEY_ID]
+  if (!v) return undefined
+  try {
+    return decrypt(v) || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** 传空字符串就是删掉密钥 */
+export function setTranslateKey(key: string): void {
+  const s = loadSecrets()
+  if (key) s[TRANSLATE_KEY_ID] = encrypt(key)
+  else delete s[TRANSLATE_KEY_ID]
+  writeJson('secrets.json', s)
+}
+
 export function setBackupKey(k: { key: string; salt: string }): void {
   const s = loadSecrets()
   s[BACKUP_KEY_ID] = encrypt(JSON.stringify(k))
@@ -275,12 +298,15 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   c.accounts = data.accounts.filter((a) => a && typeof a.id === 'string' && typeof a.email === 'string')
   save()
   const keep = loadSecrets()[BACKUP_KEY_ID]
+  // 翻译密钥是这台电脑上填的，备份里没有，恢复时原样留着
+  const keepTranslate = loadSecrets()[TRANSLATE_KEY_ID]
   const next: Record<string, string> = {}
   for (const a of c.accounts) {
     const secret = data.secrets[a.id]
     if (secret) next[a.id] = encrypt(JSON.stringify(secret))
   }
   if (keep) next[BACKUP_KEY_ID] = keep
+  if (keepTranslate) next[TRANSLATE_KEY_ID] = keepTranslate
   secrets = next
   writeJson('secrets.json', next)
   dropSecretsBackup()

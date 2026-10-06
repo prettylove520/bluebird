@@ -4350,3 +4350,18 @@ kbd {
   color: #c3c8d2;
   font-weight: 500;
 }
+
+/* ---------- 翻译 ---------- */
+.notice.translate {
+  background: var(--accent-soft);
+}
+.set-list > p.muted {
+  margin: 4px 0 10px;
+  line-height: 1.6;
+}
+.set-block .addr-add {
+  margin-top: 10px;
+}
+.set-block .set-hint .link-btn {
+  margin-left: 6px;
+}
