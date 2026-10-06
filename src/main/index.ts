@@ -1482,7 +1482,7 @@ app.whenReady().then(() => {
   setTimeout(() => {
     void (async () => {
       for (const a of getAccounts()) {
-        for (const use of ['trash', 'sent'] as const) {
+        for (const use of ['trash', 'sent', 'drafts'] as const) {
           try {
             const path = await findSpecialPath(a, use)
             if (path) putCachedList(a.id, path, await listMessages(a, path, undefined, 'bg'))

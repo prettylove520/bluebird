@@ -58,7 +58,8 @@ export const ALL = '*'
 /** 合并视图里 folder 的取值：INBOX 是所有收件箱，下面这两个是所有邮箱的已删除、已发送 */
 export const ALL_TRASH = '@trash'
 export const ALL_SENT = '@sent'
-const UNIFIED_USE: Record<string, 'trash' | 'sent'> = { [ALL_TRASH]: 'trash', [ALL_SENT]: 'sent' }
+export const ALL_DRAFTS = '@drafts'
+const UNIFIED_USE: Record<string, 'trash' | 'sent' | 'drafts'> = { [ALL_TRASH]: 'trash', [ALL_SENT]: 'sent', [ALL_DRAFTS]: 'drafts' }
 /** 「稍后处理」是一个虚拟视图，里面是被推迟的邮件 */
 export const SNOOZED = '~snoozed'
 /** 「已置顶」也是虚拟视图 */
@@ -776,7 +777,7 @@ export default function App() {
       return
     }
     // 有好几个邮箱：已删除、已发送把所有邮箱的合在一起看（每封信上标着是哪个邮箱的）
-    if (accounts.length > 1 && (t === 'trash' || t === 'sent')) return selectFolder(ALL, t === 'trash' ? ALL_TRASH : ALL_SENT)
+    if (accounts.length > 1 && (t === 'trash' || t === 'sent' || t === 'drafts')) return selectFolder(ALL, t === 'trash' ? ALL_TRASH : t === 'sent' ? ALL_SENT : ALL_DRAFTS)
     const id = activeAccountId()
     const f = id ? folders[id]?.find((x) => x.specialUse === t) : undefined
     if (id && f) {
@@ -1306,7 +1307,7 @@ export default function App() {
     const targets = targetsOf(v)
     const unified = v.accountId === ALL
     const f = unified ? undefined : folderOf(v)
-    const label = unified ? (v.folder === ALL_TRASH ? '所有已删除' : v.folder === ALL_SENT ? '所有已发送' : '所有收件箱') : f?.displayName || v.folder
+    const label = unified ? (v.folder === ALL_TRASH ? '所有已删除' : v.folder === ALL_SENT ? '所有已发送' : v.folder === ALL_DRAFTS ? '所有草稿箱' : '所有收件箱') : f?.displayName || v.folder
     const total = targets.reduce((sum, t) => sum + (folderOf(t)?.total ?? 0), 0)
     const unseen = targets.reduce((sum, t) => sum + (folderOf(t)?.unseen ?? 0), 0)
     const isCurrent = !!view && view.accountId === v.accountId && view.folder === v.folder
@@ -2758,7 +2759,9 @@ export default function App() {
         ? '已删除'
         : view?.folder === ALL_SENT
           ? '已发送'
-          : '所有收件箱'
+          : view?.folder === ALL_DRAFTS
+            ? '草稿箱'
+            : '所有收件箱'
       : folder?.displayName || (view?.folder === 'INBOX' ? '收件箱' : view?.folder || '')
   const unifiedUse = unified && view ? UNIFIED_USE[view.folder] : undefined
   const unseenHere = virtualView ? 0 : unified ? (unifiedUse ? 0 : inboxUnseen) : folder?.unseen ?? 0
@@ -3417,6 +3420,7 @@ export default function App() {
           onDeleteMany={(ids) => saveData({ drafts: dataRef.current.drafts.filter((x) => !ids.includes(x.id)) })}
           onOpenServerDrafts={() => {
             setShowDrafts(false)
+            if (accounts.length > 1) return selectFolder(ALL, ALL_DRAFTS)
             const id = activeAccountId()
             const f = id ? folders[id]?.find((x) => x.specialUse === 'drafts') : undefined
             if (id && f) selectFolder(id, f.path)
