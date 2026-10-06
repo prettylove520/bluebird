@@ -20,6 +20,8 @@ import type {
   Settings,
   UserData
 } from '../shared/types'
+import { DETAIL_VERSION } from '../shared/types'
+import { buildReply, parseInvite } from './calendar'
 import { randomUUID } from 'crypto'
 import { BlockList, isIP } from 'net'
 import { lookup } from 'dns/promises'
@@ -644,7 +646,7 @@ async function isSafePublicHost(hostname: string): Promise<boolean> {
 
 /** 交给界面之前：去掉只给主进程用的退订地址，补上「是不是陌生发件人」 */
 function forReader(account: Account, detail: MessageDetail): MessageDetail {
-  const { unsubscribeInfo: _info, ...rest } = detail
+  const { unsubscribeInfo: _info, inviteIcs: _ics, ...rest } = detail
   const sender = (detail.from[0]?.address || '').toLowerCase()
   const d = getData()
   const mine = getAccounts().some((a) => a.email.toLowerCase() === sender)
@@ -926,7 +928,7 @@ function registerIpc(): void {
     // 读过的邮件正文不会变，直接用缓存；已读标记在后台补上
     const cached = getCachedDetail(accountId, folder, uid)
     // 旧版本存下来的缓存里没有退订信息，遇到就重新取一次
-    if (cached && cached.v === 2) {
+    if (cached && cached.v === DETAIL_VERSION) {
       if (markSeen !== false) setFlag(account, folder, uid, 'seen', true).catch(() => undefined)
       return forReader(account, cached)
     }
@@ -950,7 +952,7 @@ function registerIpc(): void {
       const key = `${accountId}|${folder}|${uid}`
       if (prefetching.has(key)) continue
       const cached = getCachedDetail(accountId, folder, uid)
-      if (cached && cached.v === 2) continue
+      if (cached && cached.v === DETAIL_VERSION) continue
       prefetching.add(key)
       try {
         const detail = await getMessage(account, folder, uid, false, { lane: 'bg', maxSize: PREFETCH_MAX_BYTES })
@@ -970,7 +972,7 @@ function registerIpc(): void {
   handle('mail:unsubscribe', async (accountId: string, folder: string, uid: number) => {
     const account = need(accountId)
     const cached = getCachedDetail(accountId, folder, uid)
-    const detail = cached && cached.v === 2 ? cached : await getMessage(account, folder, uid, false)
+    const detail = cached && cached.v === DETAIL_VERSION ? cached : await getMessage(account, folder, uid, false)
     const info = detail.unsubscribeInfo
     if (!info) throw new Error('这封邮件没有提供退订方式')
     if (info.oneClick && info.url) {
@@ -1019,6 +1021,48 @@ function registerIpc(): void {
     }
     throw new Error('这封邮件没有提供可用的退订方式')
   })
+  // 日历邀请：回复「接受 / 待定 / 拒绝」。邀请内容以邮件原文为准（重新读，不用界面传来的），回复只发给邀请里写的组织者
+  const inviteDetail = async (accountId: string, folder: string, uid: number): Promise<{ account: Account; detail: MessageDetail }> => {
+    const account = need(accountId)
+    const cached = getCachedDetail(accountId, folder, uid)
+    const detail = cached && cached.v === DETAIL_VERSION ? cached : await getMessage(account, folder, uid, false)
+    return { account, detail }
+  }
+  handle('invite:respond', async (accountId: string, folder: string, uid: number, answer: string) => {
+    if (answer !== 'accepted' && answer !== 'tentative' && answer !== 'declined') throw new Error('不认识的回复方式')
+    const { account, detail } = await inviteDetail(accountId, folder, uid)
+    const parsed = detail.inviteIcs ? parseInvite(detail.inviteIcs) : undefined
+    if (!parsed || parsed.invite.method !== 'REQUEST' || parsed.invite.cancelled) throw new Error('这封邮件不是可以回复的邀请')
+    const organizer = parsed.invite.organizer
+    if (!organizer) throw new Error('这个邀请没有写明组织者，没法回复')
+    const mine = account.email.toLowerCase()
+    const reply = buildReply(parsed, { name: account.name || '', address: parsed.attendeeAddresses.includes(mine) ? mine : account.email }, answer)
+    await sendMessage(
+      account,
+      { accountId, to: organizer.address, cc: '', bcc: '', subject: reply.subject, html: '', text: reply.text, attachments: [], calendarReply: reply.ics },
+      { skipContacts: true }
+    )
+    const key = `${parsed.invite.uid}|${parsed.invite.sequence}`
+    const invites = { ...(getData().invites || {}), [key]: answer }
+    // 只留最近的几百条
+    const keys = Object.keys(invites)
+    for (const k of keys.slice(0, Math.max(0, keys.length - 500))) delete invites[k]
+    return updateData({ invites })
+  })
+  // 添加到日历：把邀请存成临时的 .ics，交给系统里的日历程序（Outlook、Windows 日历之类）打开
+  handle('invite:open', async (accountId: string, folder: string, uid: number) => {
+    const { detail } = await inviteDetail(accountId, folder, uid)
+    if (!detail.inviteIcs || !parseInvite(detail.inviteIcs)) throw new Error('这封邮件里没有日历邀请')
+    const file = join(app.getPath('temp'), `Bluebird-日历-${randomUUID().slice(0, 8)}.ics`)
+    await writeFile(file, detail.inviteIcs, 'utf8')
+    await markFromInternet(file)
+    const err = await shell.openPath(file)
+    // 程序有时要几秒才读完这个文件；过一阵再删
+    setTimeout(() => void rm(file, { force: true }).catch(() => undefined), 10 * 60 * 1000)
+    if (err) throw new Error('没有找到能打开日历文件的程序。可以先在 Windows 里装好 Outlook 或设置默认的日历应用')
+    return true
+  })
+
   handle('mail:flag', (accountId: string, folder: string, uids: number | number[], flag: 'seen' | 'flagged', value: boolean) =>
     setFlag(need(accountId), folder, uids, flag, value)
   )

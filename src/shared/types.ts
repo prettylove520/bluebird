@@ -248,6 +248,8 @@ export interface UserData {
   accepted: string[]
   /** 邮件规则，从上到下依次执行 */
   rules: MailRule[]
+  /** 日历邀请回复过什么：键是「活动编号|版本」，值是 accepted / tentative / declined */
+  invites: Record<string, string>
 }
 
 /** 自动更新进行到哪一步了 */
@@ -382,6 +384,32 @@ export interface AttachmentInfo {
   size: number
 }
 
+/** 邮件里带的日历邀请（会议邀请、活动通知） */
+export interface CalendarInvite {
+  /** REQUEST 邀请；CANCEL 取消；REPLY 对方回复了邀请；PUBLISH 只是通知 */
+  method: 'REQUEST' | 'CANCEL' | 'REPLY' | 'PUBLISH'
+  /** 日历事件自己的编号，同一场活动改期后编号不变 */
+  uid: string
+  sequence: number
+  summary: string
+  /** 开始、结束时间（毫秒）。全天的活动：开始是那天 0 点，结束是最后一天的次日 0 点 */
+  start: number
+  end?: number
+  allDay: boolean
+  location?: string
+  description?: string
+  organizer?: { name: string; address: string }
+  /** 参加的人数 */
+  attendees: number
+  /** REPLY 时：谁回复了什么（accepted / tentative / declined） */
+  reply?: { name: string; address: string; status: string }
+  /** 重复活动的说明 */
+  recurring?: string
+  cancelled: boolean
+}
+
+export type InviteAnswer = 'accepted' | 'tentative' | 'declined'
+
 export interface MessageDetail {
   uid: number
   accountId: string
@@ -409,9 +437,16 @@ export interface MessageDetail {
   unsubscribeTarget?: string
   /** 邮件头里写的退订地址，只给主进程用 */
   unsubscribeInfo?: { url?: string; mailto?: string; oneClick: boolean }
-  /** 缓存格式的版本：旧缓存里没有退订信息，读到旧版本就重新取一次 */
+  /** 邮件里的日历邀请 */
+  invite?: CalendarInvite
+  /** 日历邀请的原文，只给主进程用 */
+  inviteIcs?: string
+  /** 缓存格式的版本：旧缓存里没有退订、日历信息，读到旧版本就重新取一次 */
   v?: number
 }
+
+/** 邮件详情的缓存格式版本 */
+export const DETAIL_VERSION = 3
 
 export interface ComposeAttachment {
   /** 本地文件路径 */
@@ -433,6 +468,8 @@ export interface OutgoingMessage {
   attachments: ComposeAttachment[]
   inReplyTo?: string
   references?: string[]
+  /** 回复日历邀请时附带的日历回复（iCalendar 文本） */
+  calendarReply?: string
   /** 回复成功后给原邮件打「已回复」标记 */
   replyTo?: { accountId?: string; folder: string; uid: number }
 }

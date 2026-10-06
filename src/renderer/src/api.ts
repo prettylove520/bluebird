@@ -25,7 +25,8 @@ import type {
   ServerConfig,
   Settings,
   UpdateStatus,
-  UserData
+  UserData,
+  InviteAnswer
 } from '../../shared/types'
 import type { AiRequest } from '../../shared/ai'
 
@@ -94,6 +95,8 @@ export const api = {
     call<MessageSummary[]>('listByUids', accountId, folder, uids),
   updateData: (patch: Partial<UserData>) => call<UserData>('updateData', patch),
   runRules: () => call<number>('runRules'),
+  inviteRespond: (accountId: string, folder: string, uid: number, answer: InviteAnswer) => call<UserData>('inviteRespond', accountId, folder, uid, answer),
+  inviteOpen: (accountId: string, folder: string, uid: number) => call<boolean>('inviteOpen', accountId, folder, uid),
   scheduleAdd: (msg: OutgoingMessage, sendAt: number) => call<UserData>('scheduleAdd', msg, sendAt),
   scheduleCancel: (id: string) => call<UserData>('scheduleCancel', id),
   scheduleSendNow: (id: string) => call<UserData>('scheduleSendNow', id),

@@ -17,7 +17,8 @@ const defaults: UserData = {
   scheduled: [],
   drafts: [],
   accepted: [],
-  rules: []
+  rules: [],
+  invites: {}
 }
 
 let data: UserData | null = null

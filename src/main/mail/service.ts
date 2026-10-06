@@ -12,6 +12,8 @@ import type {
   MessageSummary,
   SpecialUse
 } from '../../shared/types'
+import { DETAIL_VERSION } from '../../shared/types'
+import { parseInvite } from '../calendar'
 import { dropBackground, withClient, withMailbox, type Lane } from './imap'
 import { isConnectionError } from './errors'
 import { classify, CLASSIFY_HEADERS, parseHeaders } from './classify'
@@ -802,6 +804,10 @@ export async function getMessage(
   const html = typeof parsed.html === 'string' ? parsed.html : undefined
   const refs = parsed.references ? (Array.isArray(parsed.references) ? parsed.references : [parsed.references]) : []
   const unsub = unsubscribeInfo(parsed)
+  // 会议邀请：日历内容一般作为 text/calendar 附在邮件里
+  const cal = parsed.attachments.find((a) => /^text\/calendar/i.test(a.contentType) || /\.ics$/i.test(a.filename || ''))
+  const ics = cal ? cal.content.toString('utf8') : undefined
+  const parsedInvite = ics ? parseInvite(ics) : undefined
 
   return {
     uid,
@@ -822,7 +828,9 @@ export async function getMessage(
     flagged: !!flags?.has('\\Flagged'),
     unsubscribe: unsub ? (unsub.oneClick && unsub.url ? 'oneclick' : unsub.mailto ? 'mail' : 'link') : undefined,
     unsubscribeInfo: unsub,
-    v: 2
+    invite: parsedInvite?.invite,
+    inviteIcs: parsedInvite ? ics : undefined,
+    v: DETAIL_VERSION
   }
 }
 

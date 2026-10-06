@@ -4787,3 +4787,65 @@ kbd {
   gap: 10px;
   margin-top: 12px;
 }
+
+/* 日历邀请 */
+.invite-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 0 20px 12px;
+  background: var(--bg-elev, transparent);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.invite-card.cancelled .invite-title {
+  text-decoration: line-through;
+  opacity: 0.6;
+}
+.invite-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.invite-tag {
+  font-size: 12px;
+  padding: 1px 8px;
+  border-radius: 99px;
+  background: var(--bg-hover);
+  color: var(--ink-2);
+}
+.invite-tag.ok {
+  color: #1f9d55;
+}
+.invite-title {
+  font-size: 16px;
+  font-weight: 600;
+}
+.invite-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 13px;
+}
+.invite-rows > div > span {
+  display: inline-block;
+  width: 52px;
+  color: var(--ink-2);
+}
+.invite-desc {
+  font-size: 13px;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  max-height: 96px;
+  overflow: hidden;
+}
+.invite-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}

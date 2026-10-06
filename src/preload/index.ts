@@ -38,6 +38,8 @@ const api = {
   updateData: invoke('data:update'),
   scheduleAdd: invoke('schedule:add'),
   runRules: invoke('rules:run'),
+  inviteRespond: invoke('invite:respond'),
+  inviteOpen: invoke('invite:open'),
   scheduleCancel: invoke('schedule:cancel'),
   scheduleSendNow: invoke('schedule:sendNow'),
   flag: invoke('mail:flag'),

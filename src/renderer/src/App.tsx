@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
+  InviteAnswer,
   Account,
   AppInfo,
   UpdateStatus,
@@ -70,7 +71,8 @@ const EMPTY_DATA: UserData = {
   scheduled: [],
   drafts: [],
   accepted: [],
-  rules: []
+  rules: [],
+  invites: {}
 }
 
 /** 邮件的键是「账号|文件夹|UID」，文件夹名里可能也有竖线，所以从两头拆 */
@@ -205,6 +207,8 @@ export default function App() {
   // 这次打开程序以来已经点过退订的发件人
   const [unsubscribed, setUnsubscribed] = useState<Set<string>>(new Set())
   const [unsubscribing, setUnsubscribing] = useState(false)
+  // 正在回复哪个日历邀请（accepted / tentative / declined），空表示没有
+  const [inviteBusy, setInviteBusy] = useState('')
   // 刚删除、归档、移动的邮件：先从列表里藏起来，过几秒才真正让服务器执行，这期间可以撤销
   const [hiddenKeys, setHiddenKeys] = useState<Set<string>>(new Set())
   const pendingOps = useRef(new Map<number, { timer: ReturnType<typeof setTimeout>; commit: () => void; undo: () => void }>())
@@ -1458,6 +1462,23 @@ export default function App() {
     const list = (data.accepted || []).filter((a) => a !== address)
     // 只是用来「不再提示」的名单，留最近的几千个就够了
     saveData({ accepted: [...list, address].slice(-3000) })
+  }
+
+  /** 回复日历邀请：会给组织者发一封邮件，点之前按钮旁边已经写明 */
+  const respondInvite = (d: MessageDetail, answer: InviteAnswer): void => {
+    if (inviteBusy) return
+    setInviteBusy(answer)
+    api
+      .inviteRespond(d.accountId, d.folder, d.uid, answer)
+      .then((next) => {
+        setData(next)
+        notify('已回复组织者')
+      })
+      .catch((err) => notify((err as Error).message, 'error'))
+      .finally(() => setInviteBusy(''))
+  }
+  const openInvite = (d: MessageDetail): void => {
+    api.inviteOpen(d.accountId, d.folder, d.uid).catch((err) => notify((err as Error).message, 'error'))
   }
 
   /** 退订：按邮件自己提供的方式来。动手之前先说清楚会做什么 */
@@ -3172,6 +3193,11 @@ export default function App() {
             unsubscribed={!!detail?.unsubscribe && unsubscribed.has(detailSender)}
             unsubscribing={unsubscribing}
             onUnsubscribe={() => detail && unsubscribe(detail)}
+            inviteStatus={detail?.invite ? data.invites?.[`${detail.invite.uid}|${detail.invite.sequence}`] : undefined}
+            inviteBusy={inviteBusy}
+            inviteMine={!!detail?.invite?.organizer && accounts.some((a) => a.email.toLowerCase() === detail.invite!.organizer!.address)}
+            onInviteRespond={(answer) => detail && respondInvite(detail, answer)}
+            onInviteOpen={() => detail && openInvite(detail)}
             gate={showGate}
             onAcceptSender={() => detailSender && acceptSender(detailSender)}
             onBlockSender={() => detailSender && blockSender(detailSender)}

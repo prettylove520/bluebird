@@ -134,6 +134,9 @@ export async function sendMessage(
     references: msg.references?.length ? msg.references : undefined
   }
 
+  // 回复日历邀请：除了文字，再附上一份日历回复，对方的日历程序才能识别
+  if (msg.calendarReply) (options as Mail.Options & { icalEvent?: unknown }).icalEvent = { method: 'REPLY', content: msg.calendarReply }
+
   // 先在本地生成完整邮件，这样发出去的和存到「已发送」的是同一份
   const node = new MailComposer(options).compile()
   const envelope = node.getEnvelope()

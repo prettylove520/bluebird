@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { Account, Address, MessageDetail, MessageSummary } from '../../../shared/types'
+import type { Account, Address, CalendarInvite, InviteAnswer, MessageDetail, MessageSummary } from '../../../shared/types'
 import { aiMailOf, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
 import { canPreview } from './AttachmentViewer'
 import { Icon } from './Icon'
@@ -87,6 +87,101 @@ interface Props {
   onAiReply?: () => void
   /** 没开 AI 时点「AI 总结」：带去设置里的 AI 页 */
   onAiSetup?: () => void
+  /** 邮件里的日历邀请：之前回复过什么（accepted / tentative / declined）、正在回复哪个 */
+  inviteStatus?: string
+  inviteBusy?: string
+  /** 邀请是自己发起的，不用回复 */
+  inviteMine?: boolean
+  onInviteRespond: (answer: InviteAnswer) => void
+  onInviteOpen: () => void
+}
+
+const ANSWER_TEXT: Record<string, string> = { accepted: '已接受', tentative: '待定', declined: '已拒绝' }
+
+/** 活动时间：同一天写一次日期，全天的活动不写钟点 */
+function inviteWhen(i: CalendarInvite): string {
+  const day = (ms: number): string => new Date(ms).toLocaleDateString('zh-CN', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'short' })
+  const clock = (ms: number): string => new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false })
+  if (i.allDay) {
+    // 全天活动的结束日期是「最后一天的次日」
+    const last = i.end && i.end - i.start > 24 * 3600 * 1000 ? i.end - 24 * 3600 * 1000 : i.start
+    return last > i.start ? `${day(i.start)} 至 ${day(last)}（全天）` : `${day(i.start)}（全天）`
+  }
+  if (!i.end) return `${day(i.start)} ${clock(i.start)}`
+  const same = new Date(i.start).toDateString() === new Date(i.end).toDateString()
+  return same ? `${day(i.start)} ${clock(i.start)} – ${clock(i.end)}` : `${day(i.start)} ${clock(i.start)} – ${day(i.end)} ${clock(i.end)}`
+}
+
+/** 邮件里的日历邀请：显示时间地点，可以回复组织者，也可以加到系统日历里 */
+function InviteCard(props: Pick<Props, 'inviteStatus' | 'inviteBusy' | 'inviteMine' | 'onInviteRespond' | 'onInviteOpen'> & { invite: CalendarInvite }) {
+  const i = props.invite
+  const past = (i.end ?? i.start) < Date.now()
+  const canReply = i.method === 'REQUEST' && !i.cancelled && !!i.organizer && !props.inviteMine
+  return (
+    <div className={`invite-card ${i.cancelled ? 'cancelled' : ''}`}>
+      <div className="invite-head">
+        <Icon name="calendarClock" size={18} />
+        <strong>{i.method === 'REPLY' ? '日历回复' : i.cancelled ? '活动已取消' : i.method === 'REQUEST' ? '会议邀请' : '日历活动'}</strong>
+        {past && !i.cancelled && <span className="invite-tag">已过期</span>}
+        {props.inviteStatus && <span className="invite-tag ok">你{ANSWER_TEXT[props.inviteStatus] || ''}</span>}
+      </div>
+      <div className="invite-title">{i.summary}</div>
+      <div className="invite-rows">
+        <div>
+          <span>时间</span>
+          {inviteWhen(i)}
+          {i.recurring ? `　${i.recurring}` : ''}
+        </div>
+        {i.location && (
+          <div>
+            <span>地点</span>
+            {i.location}
+          </div>
+        )}
+        {i.organizer && (
+          <div>
+            <span>组织者</span>
+            {i.organizer.name ? `${i.organizer.name} <${i.organizer.address}>` : i.organizer.address}
+          </div>
+        )}
+        {i.attendees > 1 && (
+          <div>
+            <span>参加者</span>共 {i.attendees} 人
+          </div>
+        )}
+        {i.reply && (
+          <div>
+            <span>回复</span>
+            {i.reply.name || i.reply.address} {({ accepted: '接受了邀请', tentative: '暂定参加', declined: '拒绝了邀请' } as Record<string, string>)[i.reply.status] || '更新了回复'}
+          </div>
+        )}
+      </div>
+      {i.description && <div className="invite-desc">{i.description}</div>}
+      <div className="invite-actions">
+        {canReply && (
+          <>
+            {(['accepted', 'tentative', 'declined'] as InviteAnswer[]).map((a) => (
+              <button
+                key={a}
+                className={`pill-btn small ${props.inviteStatus === a ? 'on' : ''}`}
+                disabled={!!props.inviteBusy}
+                onClick={() => props.onInviteRespond(a)}
+                title={`${ANSWER_TEXT[a]}，并通知组织者`}
+              >
+                {props.inviteBusy === a ? '正在回复…' : a === 'accepted' ? '接受' : a === 'tentative' ? '待定' : '拒绝'}
+              </button>
+            ))}
+          </>
+        )}
+        {i.method !== 'REPLY' && !i.cancelled && (
+          <button className="pill-btn small" onClick={props.onInviteOpen} title="用系统里的日历程序打开这个活动">
+            添加到日历
+          </button>
+        )}
+        {canReply && !props.inviteStatus && <span className="muted small">回复会发一封邮件通知组织者</span>}
+      </div>
+    </div>
+  )
 }
 
 /** 总结里「概述：」「要点：」这样的小标题加粗，其余原样显示 */
@@ -593,6 +688,17 @@ export function Reader(props: Props) {
                   </>
                 )}
               </div>
+            )}
+
+            {props.detail?.invite && (
+              <InviteCard
+                invite={props.detail.invite}
+                inviteStatus={props.inviteStatus}
+                inviteBusy={props.inviteBusy}
+                inviteMine={props.inviteMine}
+                onInviteRespond={props.onInviteRespond}
+                onInviteOpen={props.onInviteOpen}
+              />
             )}
 
             {(props.unsubscribe || props.unsubscribed) && (
