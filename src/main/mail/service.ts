@@ -22,6 +22,8 @@ import { getData } from '../userdata'
 import { loadPreviews, savePreviews } from '../cache'
 
 const PAGE_SIZE = 50
+/** 每个文件夹上一次记进日志的取信情况（没变就不重复记） */
+const listNotes = new Map<string, string>()
 
 const SPECIAL_MAP: Record<string, SpecialUse> = {
   '\\Inbox': 'inbox',
@@ -248,6 +250,12 @@ export async function listMessages(account: Account, path: string, before?: numb
     const start = Math.max(1, end - PAGE_SIZE + 1)
     const messages = await collect(client, account, path, `${start}:${end}`, false)
     messages.sort((a, b) => b.seq - a.seq)
+    // 记一笔：服务器说这个文件夹有多少封，这次实际取回多少封（邮件显示得少时靠它判断是服务器没给，还是界面筛掉了）
+    const note = `${exists}/${messages.length}/${start}-${end}`
+    if (listNotes.get(account.id + path) !== note) {
+      listNotes.set(account.id + path, note)
+      console.warn(`[列表] ${account.email} ${path}：服务器报告共 ${exists} 封，本次取回 ${messages.length} 封（序号 ${start}-${end}）`)
+    }
     harvestContacts(account, path, messages)
     return { messages, total: exists, hasMore: start > 1 }
   }, lane)
