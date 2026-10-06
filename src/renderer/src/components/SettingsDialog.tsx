@@ -290,7 +290,10 @@ export function SettingsDialog(props: Props) {
     setTestResult(null)
     try {
       const r = await api.testProxy(draft.proxy)
-      setTestResult({ ok: true, text: `代理可用（${r.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}），访问 Google 用时 ${r.ms} 毫秒` })
+      setTestResult({
+        ok: true,
+        text: `代理可用（${r.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}），访问 Google 用时 ${r.ms} 毫秒。${dirty ? '点「保存」让它生效。' : '这就是已经保存的设置，不用再保存。'}`
+      })
     } catch (err) {
       setTestResult({ ok: false, text: (err as Error).message })
     } finally {
@@ -306,10 +309,13 @@ export function SettingsDialog(props: Props) {
       if (!found) {
         setTestResult({ ok: false, text: '没有找到正在运行的代理。请先打开代理软件（Clash、v2rayN 等），再点一次；或者在上面手动填它显示的端口' })
       } else {
+        const saved = props.settings.proxy
+        const unchanged = saved.enabled && saved.host === found.host && saved.port === found.port
         setDraft((d) => ({ ...d, proxy: { ...d.proxy, enabled: true, host: found.host, port: found.port } }))
         setTestResult({
           ok: true,
-          text: `找到了 ${found.host}:${found.port}（${found.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}，${found.source === 'system' ? '来自系统代理设置' : '常用端口'}），已填好并启用。点「测试代理」确认能访问国外网站，再点「保存」`
+          text: `找到了 ${found.host}:${found.port}（${found.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}，${found.source === 'system' ? '来自系统代理设置' : '常用端口'}）。` +
+            (unchanged ? '和已经保存的设置一模一样，不用再保存（所以「保存」是灰的）。' : '已填好并启用，点「测试代理」确认能访问国外网站，再点「保存」。')
         })
       }
     } catch (err) {
@@ -870,7 +876,7 @@ export function SettingsDialog(props: Props) {
                 </button>
               )}
               <span className={`foot-note ${dirty ? 'warn' : ''}`}>
-                {dirty ? (tab === 'look' ? '现在看到的是预览，点「保存」才会留下来' : '有修改还没保存') : '这些设置改完以后要点「保存」才生效'}
+                {dirty ? (tab === 'look' ? '现在看到的是预览，点「保存」才会留下来' : '有修改还没保存') : tab === 'proxy' && props.settings.proxy.enabled ? '代理已启用并保存；改了地址或端口后才需要再保存' : '这些设置改完以后要点「保存」才生效'}
               </span>
               {dirty && (
                 <button className="ghost-btn" onClick={() => apply(props.settings)} disabled={saving}>
