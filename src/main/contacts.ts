@@ -16,6 +16,8 @@ interface Entry {
   sent?: boolean
   /** 见过的几封邮件的标识（最多记 3 个）。用来判断「是不是第一次来信」，也防止同一封信被反复计数 */
   ids?: string[]
+  /** 用户在设置里删掉了：不再提示，也不再自动收集回来 */
+  removed?: boolean
 }
 
 let book: Record<string, Entry> | null = null
@@ -53,13 +55,14 @@ const ROBOT = /(^|[-_.+])(no[-_.]?reply|do[-_.]?not[-_.]?reply|notifications?|ma
  * 记下一批地址。kind：sent = 你给他们发过信；received = 他们给你发过信。
  * id 是那封邮件的标识：同一封邮件不管列表刷新多少次、程序重启多少次，都只算一次。不传就每次都算（用于刚发出的信）。
  */
-export function noteContacts(list: { name?: string; address?: string }[], kind: 'sent' | 'received', id?: string): void {
+export function noteContacts(list: { name?: string; address?: string }[], kind: 'sent' | 'received', id?: string, when?: number): void {
   const b = load()
   let changed = false
   for (const a of list) {
     const address = (a.address || '').trim().toLowerCase()
     if (!VALID.test(address) || ROBOT.test(address)) continue
     const e = b[address] ?? { name: '', score: 0, last: 0 }
+    if (e.removed) continue
     if (id) {
       const ids = e.ids ?? []
       if (ids.includes(id)) continue
@@ -78,7 +81,7 @@ export function noteContacts(list: { name?: string; address?: string }[], kind: 
     if (name && name.toLowerCase() !== address && (!e.name || kind === 'sent')) e.name = name
     e.score += kind === 'sent' ? 5 : 1
     if (kind === 'sent') e.sent = true
-    e.last = Date.now()
+    e.last = Math.max(e.last, when && when > 0 ? when : Date.now())
     b[address] = e
     changed = true
   }
@@ -94,8 +97,9 @@ export function searchContacts(query: string, limit = 8): Contact[] {
   for (const [address, e] of Object.entries(b)) {
     const name = e.name.toLowerCase()
     const starts = address.startsWith(q) || name.startsWith(q)
+    if (e.removed) continue
     if (!starts && !address.includes(q) && !name.includes(q)) continue
-    hits.push({ c: { name: e.name, address }, rank: (starts ? 1000 : 0) + (e.sent ? 500 : 0) + Math.min(e.score, 400) })
+    hits.push({ c: { name: e.name, address }, rank: (starts ? 1000 : 0) + (e.sent ? 500 : 0) + Math.min(e.score, 400) + Math.min(e.last / 1e11, 20) })
   }
   return hits
     .sort((x, y) => y.rank - x.rank)
@@ -107,4 +111,21 @@ export function searchContacts(query: string, limit = 8): Contact[] {
 export function isKnownSender(address: string): boolean {
   const e = load()[String(address || '').toLowerCase()]
   return !!e && (!!e.sent || (e.ids?.length ?? 0) >= 2)
+}
+
+/** 设置里的联系人列表：发过信的排前面，其次按最近往来 */
+export function listContacts(): (Contact & { sent: boolean; last: number })[] {
+  return Object.entries(load())
+    .filter(([, e]) => !e.removed)
+    .map(([address, e]) => ({ name: e.name, address, sent: !!e.sent, last: e.last }))
+    .sort((x, y) => Number(y.sent) - Number(x.sent) || y.last - x.last)
+}
+
+/** 删掉一个联系人（记一笔「删过」，免得下次扫描又收集回来） */
+export function removeContact(address: string): void {
+  const b = load()
+  const key = String(address || '').toLowerCase()
+  if (!b[key]) return
+  b[key] = { name: '', score: 0, last: 0, removed: true }
+  saveSoon()
 }

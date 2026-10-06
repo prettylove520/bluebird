@@ -44,7 +44,7 @@ import { cancelOAuth } from './oauth'
 import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
-import { isKnownSender, searchContacts } from './contacts'
+import { isKnownSender, listContacts, removeContact, searchContacts } from './contacts'
 import { aiInfo, listModels, runAi, testAi, verifyKey } from './ai'
 import { aiHost } from '../shared/ai'
 import type { AiRequest } from '../shared/ai'
@@ -63,6 +63,7 @@ import {
   resetMemoryCaches,
   searchEverywhere,
   warmContacts,
+  scanContacts,
   findSentReplies,
   createFolder,
   renameFolder,
@@ -1000,6 +1001,13 @@ function registerIpc(): void {
   })
   handle('mail:searchAll', (accountId: string, q: string) => searchEverywhere(need(accountId), String(q || '')))
   handle('contacts:search', (q: string) => searchContacts(String(q || '')))
+  handle('contacts:list', () => listContacts())
+  handle('contacts:remove', (address: string) => removeContact(String(address || '')))
+  handle('contacts:scan', async () => {
+    let seen = 0
+    for (const a of getAccounts()) seen += await scanContacts(a).catch(() => 0)
+    return { scanned: seen, total: listContacts().length }
+  })
 
   // 退订：地址以邮件头里写的为准（重新从邮件里读，不用界面传来的），按能做到的最省事的方式来
   handle('mail:unsubscribe', async (accountId: string, folder: string, uid: number) => {

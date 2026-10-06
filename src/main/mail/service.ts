@@ -276,11 +276,43 @@ function harvestContacts(account: Account, path: string, messages: MessageSummar
   }
 }
 
-/** 启动后在后台看一眼「已发送」：把最近通过信的人记成联系人，写信时能补全，来信时也不会被当成陌生人 */
-export async function warmContacts(account: Account): Promise<void> {
+/**
+ * 扫描「已发送」里最近的邮件（只取收件人、抄送，不取正文），把收过信的人都记成联系人。
+ * depth：最多看多少封。重复扫描不会重复计数。
+ */
+export async function scanContacts(account: Account, depth = 1500): Promise<number> {
   const folders = folderCache.get(account.id) ?? (await listFolders(account))
   const sent = folders.find((f) => f.specialUse === 'sent')
-  if (sent) await listMessages(account, sent.path, undefined, 'bg')
+  if (!sent) return 0
+  return withMailbox(
+    account,
+    sent.path,
+    async (client) => {
+      const exists = client.mailbox ? client.mailbox.exists : 0
+      const lowest = Math.max(1, exists - depth + 1)
+      let seen = 0
+      // 从最新的往前，一次取 250 封
+      for (let end = exists; end >= lowest; end -= 250) {
+        const start = Math.max(lowest, end - 249)
+        for await (const msg of client.fetch(`${start}:${end}`, { envelope: true, uid: false })) {
+          const env = (msg as unknown as { envelope?: { date?: Date | string; messageId?: string; to?: { name?: string; address?: string }[]; cc?: { name?: string; address?: string }[] }; uid: number }).envelope
+          if (!env) continue
+          const uid = (msg as unknown as { uid: number }).uid
+          const id = env.messageId ? `${account.id}|${env.messageId}` : `${account.id}|${sent.path}|${uid}`
+          const when = env.date ? new Date(env.date).getTime() : 0
+          noteContacts([...(env.to || []), ...(env.cc || [])], 'sent', id, Number.isFinite(when) ? when : 0)
+          seen++
+        }
+      }
+      return seen
+    },
+    'bg'
+  )
+}
+
+/** 启动后在后台扫一遍「已发送」：写信时能补全，来信时也不会被当成陌生人 */
+export async function warmContacts(account: Account): Promise<void> {
+  await scanContacts(account)
 }
 
 /**
