@@ -3024,7 +3024,7 @@ export default function App() {
         onAccountMenu={openAccountSwitcher}
       />
 
-      {update && updateStep && updateLater !== updateStep && (
+      {update && updateStep && updateLater !== updateStep && dialog?.kind !== 'settings' && (
         <div className="update-banner" role="alert">
           <Icon name="refresh" size={16} />
           {update.state === 'available' && (
