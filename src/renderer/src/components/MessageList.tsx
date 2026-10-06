@@ -66,6 +66,8 @@ interface Props {
   onTitleClick: () => void
   onCompose: () => void
   /** 智能收件箱的分类页；不传就不显示 */
+  /** 列表是空的时候显示的话（不传就是「这里没有邮件」） */
+  emptyText?: string
   tabs?: { id: CategoryTab; label: string; unread: number }[]
   tab: CategoryTab
   onTab: (t: CategoryTab) => void
@@ -581,7 +583,7 @@ export function MessageList(props: Props) {
         {!props.loading && !props.loadingMore && !props.error && !messages.length && !props.bundles.length && (
           <div className="list-state">
             <Icon name="check" size={28} />
-            <p>{props.searchActive ? '没有找到相关邮件' : '这里没有邮件'}</p>
+            <p>{props.searchActive ? '没有找到相关邮件' : props.emptyText || '这里没有邮件'}</p>
           </div>
         )}
 

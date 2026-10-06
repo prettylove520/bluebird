@@ -739,15 +739,7 @@ export default function App() {
       return
     }
     if (t === 'inbox') return goInbox()
-    if (t === 'pinned' || t === 'snoozed') {
-      const has = Object.keys(t === 'pinned' ? data.pinned : data.snoozed).length > 0
-      if (!has) {
-        setHome(false)
-        notify(t === 'pinned' ? '还没有置顶的邮件。在邮件上点图钉就能置顶' : '没有推迟的邮件。在邮件上点时钟可以稍后再处理')
-        return
-      }
-      return selectFolder(t === 'pinned' ? PINNED : SNOOZED, '')
-    }
+    if (t === 'pinned' || t === 'snoozed') return selectFolder(t === 'pinned' ? PINNED : SNOOZED, '')
     // 写信时自动保存的草稿在本机；有的话先列出来
     if (t === 'drafts' && data.drafts.some((d) => !data.scheduled.some((x) => x.undo && x.draftId === d.id))) {
       setShowDrafts(true)
@@ -2293,8 +2285,9 @@ export default function App() {
     if (!view || !isVirtual(view.accountId)) return
     // 正在看搜索结果时不动列表
     if (activeQuery) return
+    // 全部处理完了就留在这里，显示「没有邮件」
     if (!virtualKeys) {
-      goInbox()
+      setMessages([])
       return
     }
     void loadList(view, '', true)
@@ -3141,6 +3134,7 @@ export default function App() {
             canArchive={(m) => canArchive(m)}
             query={query}
             searchActive={!!activeQuery}
+            emptyText={pinnedView ? '还没有置顶的邮件。在邮件上点图钉就能置顶' : snoozedView ? '没有推迟的邮件。在邮件上点时钟可以稍后再处理' : undefined}
             searchRef={searchRef}
             onQueryChange={setQuery}
             onSearch={() => {
@@ -3166,8 +3160,8 @@ export default function App() {
                 setDetail(null)
                 clearChecked()
                 setMessages([])
-                // 「稍后处理」「已置顶」在搜索期间已经清空了的话，回收件箱
-                if (isVirtual(view.accountId) && !virtualKeys) goInbox()
+                // 「稍后处理」「已置顶」在搜索期间已经清空了的话，就显示空的
+                if (isVirtual(view.accountId) && !virtualKeys) setMessages([])
                 else void loadList(view, '')
               }
             }}
