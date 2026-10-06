@@ -1,0 +1,30 @@
+appId: com.bluebird.desktop
+productName: Bluebird
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**
+  - package.json
+  - '!**/*.map'
+asarUnpack: []
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Bluebird
+  # 卸载或升级时保留账号和设置
+  deleteAppDataOnUninstall: false
+npmRebuild: false
+# 自动更新：新版本发布在这个 GitHub 仓库的 Releases 里，装好的程序会去那里找
+publish:
+  provider: github
+  owner: prettylove520
+  repo: bluebird
+  releaseType: release

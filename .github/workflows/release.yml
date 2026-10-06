@@ -1,0 +1,56 @@
+# 自动打包：package.json 里的版本号变了并推送到 main，就在 GitHub 的 Windows 机器上打出安装程序，
+# 发布到这个仓库的 Releases 里。装在电脑上的 Bluebird 会自己发现、下载并安装。
+name: 打包发布
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # 这个版本号已经发布过就不再打包（只改了说明文字之类的推送不用重复发布）
+      - name: 看看这个版本发布过没有
+        id: ver
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "v$VERSION 已经发布过了，这次不用打包"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 安装依赖
+        if: steps.ver.outputs.exists == 'false'
+        run: npm install --no-fund --no-audit
+
+      - name: 编译
+        if: steps.ver.outputs.exists == 'false'
+        run: npx electron-vite build
+
+      - name: 打包并发布
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npx electron-builder --win --publish always

@@ -1,0 +1,43 @@
+{
+  "name": "bluebird-mail",
+  "productName": "Bluebird",
+  "version": "0.5.1",
+  "description": "Windows 桌面邮件客户端（支持 QQ/163/Gmail/Outlook 等）",
+  "main": "./out/main/index.js",
+  "author": "Bluebird",
+  "license": "MIT",
+  "private": true,
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "dist:win": "electron-vite build && electron-builder --win --publish never"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9",
+    "imapflow": "^1.0.170",
+    "mailparser": "^3.7.2",
+    "nodemailer": "^7.0.0",
+    "socks": "^2.8.3"
+  },
+  "devDependencies": {
+    "@types/mailparser": "^3.4.5",
+    "@types/node": "^22.10.0",
+    "@types/nodemailer": "^6.4.17",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^37.0.0",
+    "electron-builder": "^26.0.12",
+    "electron-vite": "^3.1.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/prettylove520/bluebird.git"
+  }
+}
