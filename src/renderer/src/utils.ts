@@ -1,3 +1,4 @@
+import type { AiMail } from '../../shared/ai'
 import type { Address, MessageDetail } from '../../shared/types'
 
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -413,4 +414,22 @@ export function tagMark(tag: string): string {
   if (!t) return '?'
   // 汉字一个就够占满了；字母数字取两个
   return /^[\x00-\x7f]{2}/.test(t) ? t.slice(0, 2) : t.charAt(0)
+}
+
+/** 邮件的纯文字正文；只有 HTML 的邮件就从 HTML 里取出文字 */
+export function plainText(d: MessageDetail): string {
+  if (d.text && d.text.trim()) return d.text
+  if (!d.html) return ''
+  try {
+    const doc = new DOMParser().parseFromString(d.html, 'text/html')
+    doc.querySelectorAll('style,script,head').forEach((n) => n.remove())
+    return (doc.body.textContent || '').replace(/\n{3,}/g, '\n\n')
+  } catch {
+    return ''
+  }
+}
+
+/** 交给 AI 的邮件内容 */
+export function aiMailOf(d: MessageDetail): AiMail {
+  return { from: joinAddresses(d.from), to: joinAddresses(d.to), subject: d.subject, date: d.date, text: plainText(d) }
 }

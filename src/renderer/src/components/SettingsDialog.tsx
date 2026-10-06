@@ -3,11 +3,12 @@ import type { Account, AppInfo, ServerConfig, Settings, Template, UpdateStatus, 
 import { api } from '../api'
 import { accountTags, tagMark } from '../utils'
 import { TARGET_LANGS } from '../translate'
+import { AI_PRESETS, AI_TONES, presetOf } from '../../../shared/ai'
 import { HOME_SCENES, resolveScene, sceneForHour } from './Home'
 import { Icon, type IconName } from './Icon'
 import { BackupPanel } from './BackupPanel'
 
-export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'translate' | 'notify' | 'senders' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
+export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'translate' | 'ai' | 'notify' | 'senders' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
 
 interface Props {
   accounts: Account[]
@@ -33,7 +34,7 @@ interface Props {
 }
 
 // 这几页的内容是「设置」：改完要点保存，也可以恢复默认。其余几页（账号、发件人、备份、关于）各有各的保存方式
-const SETTING_TABS: SettingsTab[] = ['general', 'look', 'notify', 'reading', 'compose', 'translate', 'proxy', 'oauth']
+const SETTING_TABS: SettingsTab[] = ['general', 'look', 'notify', 'reading', 'compose', 'translate', 'ai', 'proxy', 'oauth']
 
 /** 把某一页的设置换成默认值，返回换好的整份设置 */
 function resetTab(tab: SettingsTab, s: Settings, d: Settings): Settings {
@@ -54,6 +55,8 @@ function resetTab(tab: SettingsTab, s: Settings, d: Settings): Settings {
   if (tab === 'reading') return { ...s, reading: { ...d.reading, density: s.reading.density, darkMail: s.reading.darkMail } }
   if (tab === 'compose') return { ...s, compose: { ...d.compose } }
   if (tab === 'translate') return { ...s, translate: { ...d.translate } }
+  // 开关和服务商选择回到默认；密钥不在这里，不受影响
+  if (tab === 'ai') return { ...s, ai: { ...d.ai } }
   if (tab === 'proxy') return { ...s, proxy: { ...d.proxy } }
   return s
 }
@@ -69,6 +72,7 @@ const TABS: { id: SettingsTab; label: string; icon: IconName; color: string; gap
   { id: 'reading', label: '阅读', icon: 'mailOpen', color: '#1fb5a5', gap: true },
   { id: 'compose', label: '写信', icon: 'pen', color: '#1fb5a5' },
   { id: 'translate', label: '翻译', icon: 'globe', color: '#1fb5a5' },
+  { id: 'ai', label: 'AI 助手', icon: 'sparkle', color: '#a66bf0' },
   { id: 'proxy', label: '代理', icon: 'all', color: '#3dae6b', gap: true },
   { id: 'oauth', label: '浏览器登录', icon: 'external', color: '#3dae6b' },
   { id: 'backup', label: '备份与恢复', icon: 'share', color: '#e8a23a', gap: true },
@@ -244,6 +248,7 @@ export function SettingsDialog(props: Props) {
   const setCompose = (p: Partial<Settings['compose']>): void => apply({ ...draft, compose: { ...draft.compose, ...p } })
   const setNotify = (p: Partial<Settings['notify']>): void => apply({ ...draft, notify: { ...draft.notify, ...p } })
   const setTranslate = (p: Partial<Settings['translate']>): void => apply({ ...draft, translate: { ...draft.translate, ...p } })
+  const setAi = (p: Partial<Settings['ai']>): void => apply({ ...draft, ai: { ...draft.ai, ...p } })
 
   /** 保存；成功返回 true */
   const saveNow = async (): Promise<boolean> => {
@@ -277,7 +282,7 @@ export function SettingsDialog(props: Props) {
   /** 全部设置换成默认值：账号、代理地址、浏览器登录用的 Client ID 不动 */
   const restoreAll = (): void => {
     if (!defaults) return
-    const next: Settings = { ...defaults, proxy: draft.proxy, oauth: draft.oauth, translate: draft.translate }
+    const next: Settings = { ...defaults, proxy: draft.proxy, oauth: draft.oauth, translate: draft.translate, ai: draft.ai }
     if (same(next, draft)) props.notify('所有设置已经是默认值了')
     else {
       apply(next)
@@ -596,6 +601,82 @@ export function SettingsDialog(props: Props) {
               </div>
             )}
 
+            {tab === 'ai' && (
+              <div className="set-list">
+                <Row title="启用 AI 助手" hint="打开后，读邮件时有「AI 总结」，写邮件时有「AI 写作」。只有你点了这些按钮，才会把那一封邮件的文字发给你选的服务商；Bluebird 不会在后台自己去读你的邮件">
+                  <Switch label="启用 AI 助手" checked={draft.ai.enabled} onChange={(enabled) => setAi({ enabled })} />
+                </Row>
+                <Row title="服务商" hint="用你自己的账号和密钥直接连，不经过 Bluebird 的任何服务器。国内的服务不用代理，Claude 和 OpenAI 需要开着代理">
+                  <select
+                    value={draft.ai.preset}
+                    onChange={(e) => {
+                      const p = presetOf(e.target.value)
+                      setAi(p.id === 'custom' ? { preset: p.id } : { preset: p.id, style: p.style, baseUrl: p.baseUrl, model: p.model })
+                    }}
+                  >
+                    {AI_PRESETS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                {draft.ai.preset === 'custom' && (
+                  <Row title="接口类型" hint="绝大多数服务（包括自己电脑上跑的 Ollama 等）都选「兼容 OpenAI」">
+                    <select value={draft.ai.style} onChange={(e) => setAi({ style: e.target.value === 'anthropic' ? 'anthropic' : 'openai' })}>
+                      <option value="openai">兼容 OpenAI</option>
+                      <option value="anthropic">Claude 官方格式</option>
+                    </select>
+                  </Row>
+                )}
+                <Row title="接口地址" hint={draft.ai.preset === 'custom' ? '服务商文档里的 Base URL，一般以 /v1 结尾，必须是 https://（本机的可以用 http://localhost）' : '选了服务商会自动填好，一般不用改'}>
+                  <input
+                    className="wide-input"
+                    value={draft.ai.baseUrl}
+                    onChange={(e) => setAi({ baseUrl: e.target.value.trim() })}
+                    placeholder="https://api.example.com/v1"
+                    aria-label="接口地址"
+                    spellCheck={false}
+                  />
+                </Row>
+                <Row title="模型" hint="服务商出了新模型，直接把名字填在这里就行。写邮件和总结用小一点的模型就够，更便宜也更快">
+                  <input
+                    className="wide-input"
+                    list="ai-models"
+                    value={draft.ai.model}
+                    onChange={(e) => setAi({ model: e.target.value.trim() })}
+                    placeholder="模型名"
+                    aria-label="模型"
+                    spellCheck={false}
+                  />
+                  <datalist id="ai-models">
+                    {presetOf(draft.ai.preset).models.map((m) => (
+                      <option key={m} value={m} />
+                    ))}
+                  </datalist>
+                </Row>
+                <AiKeyRow ai={draft.ai} notify={props.notify} confirm={props.confirm} />
+                <Row title="总结用的语言" hint="「AI 总结」把邮件总结成哪种语言。写邮件时会自动和对方邮件用同一种语言">
+                  <select value={draft.ai.language} onChange={(e) => setAi({ language: e.target.value === 'en' ? 'en' : 'zh' })}>
+                    <option value="zh">简体中文</option>
+                    <option value="en">English</option>
+                  </select>
+                </Row>
+                <Row title="写邮件的默认语气">
+                  <select value={draft.ai.tone} onChange={(e) => setAi({ tone: e.target.value })}>
+                    {AI_TONES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                </Row>
+                <p className="muted small">
+                  提醒：发给 AI 的邮件内容会交给你选的服务商处理，请按它的规定使用，涉及机密的邮件请不要用。AI 写的内容可能出错，发送前请自己看一遍；它只负责写文字，不会替你发送邮件。
+                </p>
+              </div>
+            )}
+
             {tab === 'notify' && (
               <div className="set-list">
                 <Row title="新邮件通知" hint="收件箱收到新邮件时弹出 Windows 通知">
@@ -894,6 +975,96 @@ export function SettingsDialog(props: Props) {
 }
 
 /** DeepL 密钥：填写、检查、删除。密钥保存后界面再也拿不到它，只显示最后四位 */
+/** AI 密钥：先用界面上选的服务商试一下，能用才保存。密钥只进不出 */
+function AiKeyRow({ ai, notify, confirm }: { ai: Settings['ai']; notify: (msg: string, kind?: 'ok' | 'error') => void; confirm: Props['confirm'] }) {
+  const [info, setInfo] = useState<{ hasKey: boolean; tail: string } | null>(null)
+  const [value, setValue] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  useEffect(() => {
+    api
+      .aiInfo()
+      .then(setInfo)
+      .catch(() => undefined)
+  }, [])
+  const save = async (key: string): Promise<void> => {
+    setBusy(true)
+    setResult(null)
+    try {
+      const i = await api.aiSetKey(key, ai)
+      setInfo(i)
+      setValue('')
+      notify(i.hasKey ? '密钥可以用，已经保存' : '密钥已删除')
+    } catch (err) {
+      setResult({ ok: false, text: (err as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const test = async (): Promise<void> => {
+    setBusy(true)
+    setResult(null)
+    try {
+      const r = await api.aiTest(ai)
+      setResult({ ok: true, text: `连接正常，${(r.ms / 1000).toFixed(1)} 秒收到回复` })
+    } catch (err) {
+      setResult({ ok: false, text: (err as Error).message })
+    } finally {
+      setBusy(false)
+    }
+  }
+  const keyUrl = presetOf(ai.preset).keyUrl
+  return (
+    <div className="set-block">
+      <div className="set-title">API 密钥</div>
+      <div className="set-hint">
+        {info?.hasKey ? `已经填好了（末四位 ${info.tail}）。` : '还没有填。'}
+        密钥只保存在这台电脑上，用 Windows 系统加密，只在你点 AI 按钮时用来向你选的服务商证明身份。请自己粘贴在下面，不要发给别人。
+        {keyUrl && (
+          <button className="link-btn" onClick={() => void api.openExternal(keyUrl)}>
+            去申请密钥
+          </button>
+        )}
+      </div>
+      <form
+        className="addr-add"
+        onSubmit={(e) => {
+          e.preventDefault()
+          if (value.trim()) void save(value.trim())
+        }}
+      >
+        <input
+          type="password"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          placeholder={info?.hasKey ? '要换一个密钥就填在这里' : '把密钥粘贴到这里'}
+          autoComplete="off"
+          aria-label="AI 密钥"
+        />
+        <button type="submit" className="primary-btn" disabled={busy || !value.trim()}>
+          {busy ? '正在检查…' : '保存密钥'}
+        </button>
+        {info?.hasKey && (
+          <>
+            <button type="button" className="ghost-btn bordered" disabled={busy} onClick={() => void test()}>
+              测试连接
+            </button>
+            <button
+              type="button"
+              className="ghost-btn"
+              disabled={busy}
+              onClick={() => confirm({ title: '删除 AI 密钥？', message: '删除后就不能用 AI 总结和写作了，以后可以再填。', confirmLabel: '删除', onConfirm: () => void save('') })}
+            >
+              删除
+            </button>
+          </>
+        )}
+      </form>
+      {result && <p className={result.ok ? 'test-ok' : 'form-error'}>{result.text}</p>}
+    </div>
+  )
+}
+
 function TranslateKeyRow({ notify, confirm }: { notify: (msg: string, kind?: 'ok' | 'error') => void; confirm: Props['confirm'] }) {
   const [info, setInfo] = useState<{ hasKey: boolean; tail: string } | null>(null)
   const [value, setValue] = useState('')

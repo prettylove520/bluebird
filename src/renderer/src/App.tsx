@@ -37,6 +37,7 @@ import { groupByThread, threadKeys } from './threads'
 import { TARGET_LANGS, langName, looksForeign, translateMail, type Translated } from './translate'
 import {
   accountTags,
+  aiMailOf,
   displayName,
   escapeHtml,
   formatAddress,
@@ -1952,7 +1953,7 @@ export default function App() {
         to: '',
         cc: '',
         subject: prefixSubject(d.subject, 'Fwd'),
-        bodyHtml: `${signatureBlock(account.id)}<br><div>${head}</div><br>${original}`,
+        bodyHtml: `${signatureBlock(account.id)}<br><div data-quote-head="1">${head}</div><br>${original}`,
         attachments: d.attachments.map((a) => ({
           filename: a.filename,
           size: a.size,
@@ -1994,13 +1995,20 @@ export default function App() {
         signatureBlock(account.id) +
         (settings?.compose.quoteOnReply === false
           ? ''
-          : `<br><div>${quoteHeader(d)}</div>` +
+          : `<br><div data-quote-head="1">${quoteHeader(d)}</div>` +
             `<blockquote style="margin:0 0 0 .8ex;border-left:2px solid #ccc;padding-left:1ex">${original}</blockquote>`),
       inReplyTo: d.messageId,
       references: [...d.references, ...(d.messageId ? [d.messageId] : [])],
       replyTo: { accountId: d.accountId, folder: d.folder, uid: d.uid },
-      attachments: []
+      attachments: [],
+      aiContext: aiMailOf(d)
     }
+  }
+
+  /** 读信页总结卡片上的「据此写回复」：打开回复窗口，AI 写作面板直接展开 */
+  const openAiReply = (): void => {
+    if (!accounts.length || !detail) return
+    setCompose({ ...buildCompose('reply', detail), aiOpen: true })
   }
 
   const openCompose = (mode: ComposeInit['mode']): void => {
@@ -3154,6 +3162,9 @@ export default function App() {
             onRemoteImagesChange={(v) => (remoteAllowed.current = v)}
             onQuickReply={quickReply}
             onExpandReply={expandReply}
+            aiReady={settings.ai.enabled}
+            onAiReply={openAiReply}
+            onAiSetup={() => setDialog({ kind: 'settings', tab: 'ai' })}
           />
         </>
       )}
@@ -3165,6 +3176,8 @@ export default function App() {
           settings={settings.compose}
           signatureFor={signatureInner}
           templates={data.templates}
+          aiReady={settings.ai.enabled}
+          aiTone={settings.ai.tone}
           onSchedule={async (msg: OutgoingMessage, sendAt: number) => {
             setData(await api.scheduleAdd(msg, sendAt))
             setCompose(null)

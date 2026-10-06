@@ -27,6 +27,7 @@ import type {
   UpdateStatus,
   UserData
 } from '../../shared/types'
+import type { AiRequest } from '../../shared/ai'
 
 type Fn = (...args: unknown[]) => Promise<unknown>
 type Listen = (cb: (payload: unknown) => void) => () => void
@@ -132,6 +133,10 @@ export const api = {
   translateTexts: (texts: string[], xml: boolean) => call<{ texts: string[]; from: string }>('translateTexts', texts, xml),
   updateStatus: () => call<UpdateStatus>('updateStatus'),
   updateCheck: () => call<UpdateStatus>('updateCheck'),
+  aiInfo: () => call<{ hasKey: boolean; tail: string }>('aiInfo'),
+  aiSetKey: (key: string, ai: Settings['ai']) => call<{ hasKey: boolean; tail: string }>('aiSetKey', key, ai),
+  aiTest: (ai: Settings['ai']) => call<{ ms: number }>('aiTest', ai),
+  aiRun: (req: AiRequest) => call<string>('aiRun', req),
   updateDownload: () => call<UpdateStatus>('updateDownload'),
   updateInstall: () => call<boolean>('updateInstall'),
   testNotify: () => call<{ supported: boolean }>('testNotify'),

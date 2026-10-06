@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, Address, MessageDetail, MessageSummary } from '../../../shared/types'
-import { avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
+import { aiMailOf, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
 import { canPreview } from './AttachmentViewer'
 import { Icon } from './Icon'
+import { api } from '../api'
 
 /** 会话里的一封邮件（读信页里收起来显示成一行的那种） */
 export interface ThreadItem {
@@ -80,7 +81,38 @@ interface Props {
   onRemoteImagesChange: (allowed: boolean) => void
   onQuickReply: (text: string) => Promise<void>
   onExpandReply: (text: string) => void
+  /** 设置里开了 AI 助手 */
+  aiReady?: boolean
+  /** 总结卡片上的「据此写回复」：打开回复窗口并展开 AI 写作 */
+  onAiReply?: () => void
+  /** 没开 AI 时点「AI 总结」：带去设置里的 AI 页 */
+  onAiSetup?: () => void
 }
+
+/** 总结里「概述：」「要点：」这样的小标题加粗，其余原样显示 */
+function AiText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split('\n').map((line, i) => {
+        const m = line.match(/^(\s*(?:概述|要点|需要你处理的事|需要处理的事|待办|Summary|Key points|Action items|To do)\s*[:：])(.*)$/i)
+        return (
+          <div key={i}>
+            {m ? (
+              <>
+                <strong>{m[1]}</strong>
+                {m[2]}
+              </>
+            ) : (
+              line || '\u00a0'
+            )}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
+type AiSum = { id: string; state: 'loading' | 'done' | 'error'; text: string }
 
 /** 附件类型小标签的颜色 */
 function fileKind(name: string): { label: string; color: string } {
@@ -155,6 +187,38 @@ export function Reader(props: Props) {
   }, [reply])
 
   useEffect(() => () => observer.current?.disconnect(), [])
+
+  // AI 总结：每封邮件只总结一次，换回来直接看上次的结果
+  const [aiSum, setAiSum] = useState<AiSum | null>(null)
+  const aiCache = useRef(new Map<string, string>())
+  const aiRun = useRef(0)
+  useEffect(() => {
+    aiRun.current++
+    const cached = detailId ? aiCache.current.get(detailId) : undefined
+    setAiSum(cached ? { id: detailId, state: 'done', text: cached } : null)
+  }, [detailId])
+  const summarize = (force = false): void => {
+    if (!detail) return
+    const id = detailId
+    if (!force) {
+      const cached = aiCache.current.get(id)
+      if (cached) {
+        setAiSum({ id, state: 'done', text: cached })
+        return
+      }
+    }
+    const run = ++aiRun.current
+    setAiSum({ id, state: 'loading', text: '' })
+    api
+      .aiRun({ task: 'summarize', mail: aiMailOf(detail) })
+      .then((text) => {
+        aiCache.current.set(id, text)
+        if (run === aiRun.current) setAiSum({ id, state: 'done', text })
+      })
+      .catch((e: unknown) => {
+        if (run === aiRun.current) setAiSum({ id, state: 'error', text: String((e as Error)?.message || e) })
+      })
+  }
 
   /** 正文 iframe 的高度跟随内容，这样标题和正文一起滚动 */
   const fitFrame = (): void => {
@@ -403,6 +467,14 @@ export function Reader(props: Props) {
         </button>
 
         <span className="tool-space" />
+        <button
+          className={`pill-btn no-drag ${aiSum ? 'on' : ''}`}
+          onClick={() => (props.aiReady ? (aiSum ? setAiSum(null) : summarize()) : props.onAiSetup?.())}
+          title={props.aiReady ? '让 AI 总结这封邮件' : 'AI 助手还没有开启，点一下去设置'}
+        >
+          <Icon name="sparkle" size={19} />
+          AI 总结
+        </button>
         <button className="pill-btn no-drag" onClick={props.onReply} title="回复（R）">
           <Icon name="reply" size={19} />
           回复
@@ -472,6 +544,54 @@ export function Reader(props: Props) {
                 <button className="link-btn danger" onClick={props.onBlockSender}>
                   屏蔽
                 </button>
+              </div>
+            )}
+
+            {aiSum && aiSum.id === detailId && (
+              <div className="ai-card">
+                <div className="ai-head">
+                  <Icon name="sparkle" size={16} />
+                  <strong>AI 总结</strong>
+                  <span className="ai-tip">由 AI 生成，重要内容请对照原文</span>
+                  <span className="tool-space" />
+                  {aiSum.state === 'done' && (
+                    <>
+                      <button className="link-btn" onClick={() => void navigator.clipboard?.writeText(aiSum.text)}>
+                        复制
+                      </button>
+                      <button className="link-btn" onClick={() => summarize(true)}>
+                        重新生成
+                      </button>
+                    </>
+                  )}
+                  <button className="link-btn" onClick={() => setAiSum(null)}>
+                    关闭
+                  </button>
+                </div>
+                {aiSum.state === 'loading' && <p className="ai-loading">正在读这封邮件…</p>}
+                {aiSum.state === 'error' && (
+                  <p className="ai-error">
+                    {aiSum.text}
+                    <button className="link-btn" onClick={() => summarize(true)}>
+                      重试
+                    </button>
+                  </p>
+                )}
+                {aiSum.state === 'done' && (
+                  <>
+                    <div className="ai-body">
+                      <AiText text={aiSum.text} />
+                    </div>
+                    {props.onAiReply && (
+                      <div className="ai-actions">
+                        <button className="pill-btn small" onClick={props.onAiReply}>
+                          <Icon name="reply" size={16} />
+                          据此写回复
+                        </button>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
             )}
 

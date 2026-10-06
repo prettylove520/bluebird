@@ -114,6 +114,20 @@ export interface TranslateSettings {
   target: string
 }
 
+/** AI 助手（写邮件、读邮件）。密钥不在这里，单独加密保存 */
+export interface AiSettings {
+  enabled: boolean
+  /** 服务商预设的 id（见 shared/ai.ts） */
+  preset: string
+  style: 'anthropic' | 'openai'
+  baseUrl: string
+  model: string
+  /** 总结邮件用的语言 */
+  language: 'zh' | 'en'
+  /** 写邮件默认的语气 */
+  tone: string
+}
+
 export interface Settings {
   proxy: ProxySettings
   oauth: OAuthSettings
@@ -122,6 +136,7 @@ export interface Settings {
   compose: ComposeSettings
   notify: NotifySettings
   translate: TranslateSettings
+  ai: AiSettings
 }
 
 export interface Template {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Account, ComposeAttachment, ComposeSettings, LocalDraft, OutgoingMessage, Template } from '../../../shared/types'
+import { AI_TONES, type AiMail } from '../../../shared/ai'
 import { api } from '../api'
 import { escapeHtml, formatSize, timePresets } from '../utils'
 import { ContextMenu, type MenuItem } from './ContextMenu'
@@ -26,6 +27,21 @@ export interface ComposeInit {
   draftId?: string
   /** 打开时就要显示的提示：比如这封信刚才没发出去的原因 */
   error?: string
+  /** 回复时：被回复的那封邮件，AI 写回复要参考它 */
+  aiContext?: AiMail
+  /** 打开写信窗口时就展开 AI 写作面板 */
+  aiOpen?: boolean
+}
+
+const QUOTE_SEL = '[data-signature],[data-quote-head],blockquote'
+
+/** AI 写的文字放进编辑器：空行分段，单个换行保留 */
+function aiToHtml(text: string): string {
+  return text
+    .trim()
+    .split(/\n{2,}/)
+    .map((p) => `<div>${p.split('\n').map(escapeHtml).join('<br>')}</div>`)
+    .join('<div><br></div>')
 }
 
 const TITLES: Record<ComposeInit['mode'], string> = {
@@ -42,6 +58,10 @@ interface Props {
   /** 取某个账号的签名（HTML 片段），切换发件人时用来替换签名 */
   signatureFor: (accountId: string) => string
   templates: Template[]
+  /** 设置里开了 AI 助手 */
+  aiReady: boolean
+  /** 设置里选的默认语气 */
+  aiTone: string
   /** 定时发送：把邮件放进队列，成功后关闭写信窗口 */
   onSchedule: (msg: OutgoingMessage, sendAt: number) => Promise<void>
   /** 开了「撤销发送」时：把邮件交出去排队，过几秒才真正发出。成功后写信窗口会被关掉 */
@@ -77,6 +97,15 @@ export function Composer(props: Props) {
   const [linkInput, setLinkInput] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const editorRef = useRef<HTMLDivElement>(null)
+  // AI 写作
+  const [aiOpen, setAiOpen] = useState(!!init.aiOpen)
+  const [aiMode, setAiMode] = useState<'write' | 'polish'>('write')
+  const [aiTone, setAiTone] = useState(props.aiTone)
+  const [aiInstr, setAiInstr] = useState('')
+  const [aiBusy, setAiBusy] = useState(false)
+  const [aiResult, setAiResult] = useState<{ text: string; subject?: string; polish: boolean } | null>(null)
+  const [aiError, setAiError] = useState<string | null>(null)
+  const aiRun = useRef(0)
   const toRef = useRef<HTMLInputElement>(null)
   const savedRange = useRef<Range | null>(null)
   const dirty = useRef(false)
@@ -146,6 +175,80 @@ export function Composer(props: Props) {
       sel?.addRange(range)
     }
   }, [init])
+
+  /** 编辑器里属于「我写的」那一部分：签名、引用的原文之前的内容 */
+  const userNodes = (): ChildNode[] => {
+    const ed = editorRef.current
+    if (!ed) return []
+    const out: ChildNode[] = []
+    for (const n of Array.from(ed.childNodes)) {
+      if (n instanceof HTMLElement && (n.matches(QUOTE_SEL) || n.querySelector(QUOTE_SEL))) break
+      out.push(n)
+    }
+    return out
+  }
+  const userText = (): string =>
+    userNodes()
+      .map((n) => (n instanceof HTMLElement ? n.innerText : n.textContent || ''))
+      .join('\n')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim()
+
+  const aiGenerate = (): void => {
+    const polish = aiMode === 'polish'
+    const draft = userText()
+    const wantSubject = !polish && !init.aiContext && !subject.trim()
+    const run = ++aiRun.current
+    setAiBusy(true)
+    setAiError(null)
+    setAiResult(null)
+    api
+      .aiRun({
+        task: polish ? 'polish' : init.aiContext ? 'reply' : 'compose',
+        mail: init.aiContext,
+        instruction: aiInstr.trim() || undefined,
+        draft: draft || undefined,
+        tone: aiTone,
+        wantSubject,
+        me: accounts.find((a) => a.id === accountId)?.name
+      })
+      .then((raw) => {
+        if (run !== aiRun.current) return
+        let text = raw.trim()
+        let subj: string | undefined
+        if (wantSubject) {
+          const m = text.match(/^\s*(?:主题|Subject)\s*[:：]\s*(.+?)\s*(?:\n|$)/i)
+          if (m) {
+            subj = m[1].trim()
+            text = text.slice(m[0].length).replace(/^\s*\n/, '').trim()
+          }
+        }
+        setAiResult({ text, subject: subj, polish })
+      })
+      .catch((e: unknown) => {
+        if (run === aiRun.current) setAiError(String((e as Error)?.message || e))
+      })
+      .finally(() => {
+        if (run === aiRun.current) setAiBusy(false)
+      })
+  }
+
+  /** 把 AI 写好的放进正文：replace 是换掉我已经写的那部分，否则接在后面 */
+  const aiApply = (replace: boolean): void => {
+    const ed = editorRef.current
+    if (!ed || !aiResult) return
+    const nodes = userNodes()
+    const hadText = userText() !== ''
+    const ref = nodes.length ? nodes[nodes.length - 1].nextSibling : ed.firstChild
+    if (replace || !hadText) nodes.forEach((n) => n.remove())
+    const holder = document.createElement('div')
+    holder.innerHTML = (hadText && !replace ? '<div><br></div>' : '') + aiToHtml(aiResult.text) + '<div><br></div>'
+    while (holder.firstChild) ed.insertBefore(holder.firstChild, ref)
+    if (aiResult.subject && !subject.trim()) setSubject(aiResult.subject)
+    dirty.current = true
+    setAiResult(null)
+    ed.focus()
+  }
 
   const exec = (cmd: string, value?: string): void => {
     editorRef.current?.focus()
@@ -459,6 +562,16 @@ export function Composer(props: Props) {
               模板
             </button>
           )}
+          <button
+            type="button"
+            className={`text-tool ai-tool ${aiOpen ? 'on' : ''}`}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setAiOpen((v) => !v)}
+            title="让 AI 帮你写邮件、写回复或润色"
+          >
+            <Icon name="sparkle" size={15} />
+            AI 写作
+          </button>
           {linkInput !== null && (
             <span className="link-input">
               <input
@@ -482,6 +595,94 @@ export function Composer(props: Props) {
             </span>
           )}
         </div>
+
+        {aiOpen && (
+          <div className="ai-panel">
+            {!props.aiReady ? (
+              <p className="ai-off">AI 助手还没有开启。到「设置 → AI 助手」里选好服务商、填上密钥并打开开关，就可以在这里用了。</p>
+            ) : (
+              <>
+                <div className="ai-row">
+                  <div className="ai-seg" role="tablist">
+                    <button type="button" className={aiMode === 'write' ? 'on' : ''} onClick={() => setAiMode('write')}>
+                      {init.aiContext ? '写回复' : '帮我写'}
+                    </button>
+                    <button type="button" className={aiMode === 'polish' ? 'on' : ''} onClick={() => setAiMode('polish')}>
+                      润色我写的
+                    </button>
+                  </div>
+                  <select value={aiTone} onChange={(e) => setAiTone(e.target.value)} title="语气" aria-label="语气">
+                    {AI_TONES.map((t) => (
+                      <option key={t.id} value={t.id}>
+                        {t.label}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="tool-space" />
+                  <button type="button" className="link-btn" onClick={() => setAiOpen(false)}>
+                    收起
+                  </button>
+                </div>
+                <textarea
+                  className="ai-input"
+                  rows={2}
+                  value={aiInstr}
+                  autoFocus={!!init.aiOpen}
+                  onChange={(e) => setAiInstr(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !aiBusy) {
+                      e.preventDefault()
+                      aiGenerate()
+                    }
+                  }}
+                  placeholder={
+                    aiMode === 'polish'
+                      ? '润色的要求（可以不写）：比如「更礼貌一点」「改短一些」'
+                      : init.aiContext
+                        ? '想怎么回（可以不写）：比如「同意，但时间改到周五下午」'
+                        : '想写什么：比如「通知对方会议改到周五下午三点，请回复确认」'
+                  }
+                />
+                <div className="ai-row">
+                  <button type="button" className="pill-btn small primary" onClick={aiGenerate} disabled={aiBusy}>
+                    <Icon name="sparkle" size={15} />
+                    {aiBusy ? '正在写…' : aiResult ? '重新生成' : '生成'}
+                  </button>
+                  <span className="ai-tip">Ctrl+Enter 生成。AI 不会替你发信，写好后由你检查再发</span>
+                </div>
+                {aiError && <p className="ai-error">{aiError}</p>}
+                {aiResult && (
+                  <div className="ai-result">
+                    {aiResult.subject && <div className="ai-subject">主题：{aiResult.subject}</div>}
+                    <div className="ai-body">{aiResult.text}</div>
+                    <div className="ai-row">
+                      {aiResult.polish ? (
+                        <button type="button" className="pill-btn small primary" onClick={() => aiApply(true)}>
+                          替换我写的
+                        </button>
+                      ) : (
+                        <button type="button" className="pill-btn small primary" onClick={() => aiApply(false)}>
+                          放进正文
+                        </button>
+                      )}
+                      {!aiResult.polish && userText() !== '' && (
+                        <button type="button" className="pill-btn small" onClick={() => aiApply(true)}>
+                          替换我写的
+                        </button>
+                      )}
+                      <button type="button" className="link-btn" onClick={() => void navigator.clipboard?.writeText(aiResult.text)}>
+                        复制
+                      </button>
+                      <button type="button" className="link-btn" onClick={() => setAiResult(null)}>
+                        不要了
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
 
         <div
           ref={editorRef}

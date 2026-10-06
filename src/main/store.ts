@@ -61,7 +61,8 @@ const defaultSettings: Settings = {
   },
   compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
   notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
-  translate: { target: 'ZH' }
+  translate: { target: 'ZH' },
+  ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', language: 'zh', tone: 'friendly' }
 }
 
 /** 撤销发送等待的秒数：0 是关闭，最长 60 秒 */
@@ -81,6 +82,21 @@ function cleanProxy(p: Settings['proxy'] & { type?: unknown }): Settings['proxy'
   }
 }
 
+/** AI 设置：不认识的值换回默认 */
+export function cleanAi(a: Settings['ai']): Settings['ai'] {
+  const d = defaultSettings.ai
+  const text = (v: unknown, fallback: string): string => (typeof v === 'string' ? v.trim().slice(0, 300) : fallback)
+  return {
+    enabled: !!a.enabled,
+    preset: text(a.preset, d.preset) || d.preset,
+    style: a.style === 'anthropic' ? 'anthropic' : 'openai',
+    baseUrl: text(a.baseUrl, d.baseUrl).replace(/\/+$/, ''),
+    model: text(a.model, d.model),
+    language: a.language === 'en' ? 'en' : 'zh',
+    tone: ['friendly', 'formal', 'concise'].includes(a.tone) ? a.tone : d.tone
+  }
+}
+
 /** 把磁盘上的设置和默认值合并，旧版本缺少的项用默认值补上 */
 function mergeSettings(raw?: Partial<Settings> & { notifications?: boolean }): Settings {
   const d = defaultSettings
@@ -92,7 +108,8 @@ function mergeSettings(raw?: Partial<Settings> & { notifications?: boolean }): S
     compose: { ...d.compose, ...raw?.compose, undoSeconds: clampUndo(raw?.compose?.undoSeconds, d.compose.undoSeconds) },
     // 旧版本只有一个 notifications 开关
     notify: { ...d.notify, ...(raw?.notifications === false ? { enabled: false } : {}), ...raw?.notify },
-    translate: { target: raw?.translate?.target || d.translate.target }
+    translate: { target: raw?.translate?.target || d.translate.target },
+    ai: cleanAi({ ...d.ai, ...raw?.ai })
   }
 }
 
@@ -282,6 +299,25 @@ export function setTranslateKey(key: string): void {
   writeJson('secrets.json', s)
 }
 
+const AI_KEY_ID = '__ai__'
+
+export function getAiKey(): string | undefined {
+  const v = loadSecrets()[AI_KEY_ID]
+  if (!v) return undefined
+  try {
+    return decrypt(v) || undefined
+  } catch {
+    return undefined
+  }
+}
+
+export function setAiKey(key: string): void {
+  const s = loadSecrets()
+  if (key) s[AI_KEY_ID] = encrypt(key)
+  else delete s[AI_KEY_ID]
+  writeJson('secrets.json', s)
+}
+
 export function setBackupKey(k: { key: string; salt: string }): void {
   const s = loadSecrets()
   s[BACKUP_KEY_ID] = encrypt(JSON.stringify(k))
@@ -310,6 +346,7 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   const keep = loadSecrets()[BACKUP_KEY_ID]
   // 翻译密钥是这台电脑上填的，备份里没有，恢复时原样留着
   const keepTranslate = loadSecrets()[TRANSLATE_KEY_ID]
+  const keepAi = loadSecrets()[AI_KEY_ID]
   const next: Record<string, string> = {}
   for (const a of c.accounts) {
     const secret = data.secrets[a.id]
@@ -317,6 +354,7 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   }
   if (keep) next[BACKUP_KEY_ID] = keep
   if (keepTranslate) next[TRANSLATE_KEY_ID] = keepTranslate
+  if (keepAi) next[AI_KEY_ID] = keepAi
   secrets = next
   writeJson('secrets.json', next)
   dropSecretsBackup()

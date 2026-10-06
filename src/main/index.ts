@@ -38,10 +38,12 @@ import { appendFileSync, existsSync, readFileSync, renameSync, statSync, unlinkS
 import { addOAuthAccount, addPasswordAccount, listPresets, reauthAccount, removeAccount, updateAccount, type AccountPatch } from './accounts'
 import { detect } from './presets'
 import { cancelOAuth } from './oauth'
-import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setTranslateKey } from './store'
+import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
+import { aiInfo, runAi, testAi } from './ai'
+import type { AiRequest } from '../shared/ai'
 import { checkForUpdate, checkIfStale, downloadUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
 import { ICON_PNG_BASE64 } from './icon'
@@ -1180,6 +1182,20 @@ function registerIpc(): void {
   })
   handle('translate:usage', () => translateUsage())
   handle('translate:texts', (texts: string[], xml: boolean) => translateTexts(texts, !!xml))
+  // AI 助手。密钥只进不出：界面只知道「填了没有」和最后四位
+  handle('ai:info', () => aiInfo())
+  handle('ai:setKey', async (key: string, candidate: Settings['ai']) => {
+    const k = String(key || '').trim()
+    if (k) {
+      if (k.length < 8 || k.length > 400 || /\s/.test(k)) throw new Error('这不像是一个 API 密钥。密钥是一长串字母数字，中间没有空格，请重新复制一下')
+      // 先用界面上选的服务商试一下，不能用就不保存
+      await testAi(cleanAi(candidate), k)
+    }
+    setAiKey(k)
+    return aiInfo()
+  })
+  handle('ai:test', (candidate: Settings['ai']) => testAi(cleanAi(candidate)))
+  handle('ai:run', (req: AiRequest) => runAi(req))
   handle('update:status', () => updateStatus())
   handle('update:check', () => checkForUpdate(true))
   handle('update:download', () => downloadUpdate())
