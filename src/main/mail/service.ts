@@ -13,6 +13,7 @@ import type {
   SpecialUse
 } from '../../shared/types'
 import { dropBackground, withClient, withMailbox, type Lane } from './imap'
+import { isConnectionError } from './errors'
 import { classify, CLASSIFY_HEADERS, parseHeaders } from './classify'
 import { noteContacts } from '../contacts'
 import { getData } from '../userdata'
@@ -294,10 +295,10 @@ export async function searchEverywhere(account: Account, query: string): Promise
   const seen = new Set<string>()
   let firstError = ''
   let ok = 0
-  for (const f of targets) {
+  for (const [i, f] of targets.entries()) {
     try {
       // 要一个文件夹一个文件夹地搜，比较慢：走后台那条连接，搜索期间照样能打开邮件
-      const page = await searchMessages(account, f.path, q, 'bg')
+      const page = await searchMessages(account, f.path, q, 'bg', i < 2)
       // 每个文件夹最多取最近的 40 封，免得一个大文件夹把结果占满
       for (const m of page.messages.slice(0, 40)) {
         // 同一封信在几个文件夹里各有一份时只列一次
@@ -321,21 +322,77 @@ export async function searchEverywhere(account: Account, query: string): Promise
   return { messages: top, total: top.length, hasMore: false }
 }
 
-export async function searchMessages(account: Account, path: string, query: string, lane: Lane = 'main'): Promise<MessagePage> {
+// 有的邮箱（QQ、网易）的服务器搜索不完整：不认「几个条件任选其一」、不认中文、或者干脆搜不到正文。
+// 所以搜索分几步：先一次问服务器；没结果或服务器报错，就一个条件一个条件地问；
+// 还是没有，就把最近的邮件头取下来，在本地比对主题、发件人、收件人。记住哪个账号用了哪一步，日志里能看到。
+const LOCAL_SCAN = 500
+
+function matchesLocal(m: MessageSummary, q: string): boolean {
+  const needle = q.toLowerCase()
+  const hay = [m.subject, ...m.from.flatMap((a) => [a.name, a.address]), ...m.to.flatMap((a) => [a.name, a.address])]
+  return hay.some((t) => (t || '').toLowerCase().includes(needle))
+}
+
+export async function searchMessages(
+  account: Account,
+  path: string,
+  query: string,
+  lane: Lane = 'main',
+  deep = true
+): Promise<MessagePage> {
   const q = query.trim()
   if (!q) return listMessages(account, path, undefined, lane)
-  return withMailbox(account, path, async (client) => {
-    const isGmail = account.imap.host === 'imap.gmail.com'
-    const criteria = isGmail
-      ? { gmraw: q }
-      : { or: [{ subject: q }, { from: q }, { to: q }, { body: q }] }
-    const uids = (await client.search(criteria, { uid: true })) || []
-    const latest = uids.sort((a, b) => b - a).slice(0, 100)
-    if (!latest.length) return { messages: [], total: 0, hasMore: false }
-    const messages = await collect(client, account, path, latest, true)
-    messages.sort((a, b) => b.uid - a.uid)
-    return { messages, total: uids.length, hasMore: false }
-  }, lane)
+  return withMailbox(
+    account,
+    path,
+    async (client) => {
+      const isGmail = account.imap.host === 'imap.gmail.com'
+      // 一次服务器搜索；服务器不认这个条件时返回 null（断线才算真出错）
+      const ask = async (criteria: object): Promise<number[] | null> => {
+        try {
+          return (await client.search(criteria, { uid: true })) || []
+        } catch (err) {
+          if (!client.usable || isConnectionError(err)) throw err
+          console.warn(`[搜索 ${account.email}] 服务器不接受这个搜索条件：`, (err as Error).message)
+          return null
+        }
+      }
+      const finish = async (uids: number[], total = uids.length): Promise<MessagePage> => {
+        const latest = [...uids].sort((a, b) => b - a).slice(0, 100)
+        if (!latest.length) return { messages: [], total: 0, hasMore: false }
+        const messages = await collect(client, account, path, latest, true)
+        messages.sort((a, b) => b.uid - a.uid)
+        return { messages, total, hasMore: false }
+      }
+
+      // 第一步：一次问完
+      const first = await ask(isGmail ? { gmraw: q } : { or: [{ subject: q }, { from: q }, { to: q }, { body: q }] })
+      if (first?.length || isGmail) return finish(first || [])
+
+      // 全部邮箱搜索时，只有收件箱和已发送这两个主要文件夹才往下找，其余的问一次就算了，免得搜索拖太久
+      if (!deep) return { messages: [], total: 0, hasMore: false }
+
+      // 第二步：一个条件一个条件地问，结果合起来
+      const found = new Set<number>()
+      for (const criteria of [{ subject: q }, { from: q }, { to: q }, { text: q }]) {
+        for (const uid of (await ask(criteria)) || []) found.add(uid)
+      }
+      if (found.size) {
+        console.warn(`[搜索 ${account.email}] 一次问完没有结果，分开问找到了 ${found.size} 封`)
+        return finish([...found])
+      }
+
+      // 第三步：服务器怎么问都没有。取最近的邮件头在本地比对（只比对主题、发件人、收件人）
+      const exists = client.mailbox ? client.mailbox.exists : 0
+      if (exists < 1) return { messages: [], total: 0, hasMore: false }
+      const start = Math.max(1, exists - LOCAL_SCAN + 1)
+      const recent = await collect(client, account, path, `${start}:${exists}`, false)
+      const hit = recent.filter((m) => matchesLocal(m, q)).sort((a, b) => b.uid - a.uid)
+      if (hit.length) console.warn(`[搜索 ${account.email}] 服务器没有结果，在最近 ${recent.length} 封里本地比对找到了 ${hit.length} 封`)
+      return { messages: hit.slice(0, 100), total: hit.length, hasMore: false }
+    },
+    lane
+  )
 }
 
 /**
