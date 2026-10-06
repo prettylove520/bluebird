@@ -1337,6 +1337,8 @@ select:focus {
   min-height: 0;
   display: grid;
   grid-template-columns: 160px 1fr;
+  /* 只有一行、高度就是窗口剩下的空间：不写的话行高跟着内容走，内容一长就会伸到底部按钮栏下面去 */
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .tabs {
@@ -1344,6 +1346,8 @@ select:focus {
   flex-direction: column;
   gap: 2px;
   padding: 4px 10px 16px 14px;
+  min-height: 0;
+  overflow-y: auto;
 }
 .tabs button {
   text-align: left;
@@ -1361,6 +1365,7 @@ select:focus {
 }
 
 .tab-body {
+  min-height: 0;
   overflow-y: auto;
   padding: 4px 24px 24px 12px;
 }
@@ -4370,9 +4375,10 @@ kbd {
 
 .update-banner {
   position: fixed;
-  top: 6px;
-  left: 50%;
-  transform: translateX(-50%);
+  /* 放在顶部 44px 的拖动窗口区域下面：整条横幅都不在可拖动的地方，按钮一定点得到 */
+  top: calc(var(--titlebar) + 22px);
+  right: 20px;
+  max-width: calc(100vw - 40px);
   z-index: 40;
   display: flex;
   align-items: center;
