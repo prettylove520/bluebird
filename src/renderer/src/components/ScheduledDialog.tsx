@@ -35,7 +35,7 @@ export function ScheduledDialog({ items, accounts, onSendNow, onCancel, onClose,
           </button>
         </header>
         <div className="dialog-body">
-          <p className="muted">到时间后由 Bluebird 发出，所以那时程序需要开着（留在托盘也可以）。如果到点时没开，下次打开会马上补发；晚了超过 12 小时的不会自动发，会留在这里等你决定。</p>
+          <p className="muted">到时间后由 Bluebird Mail 发出，所以那时程序需要开着（留在托盘也可以）。如果到点时没开，下次打开会马上补发；晚了超过 12 小时的不会自动发，会留在这里等你决定。</p>
           {!sorted.length && <p className="muted">没有等待发送的邮件。</p>}
           {sorted.map((s) => {
             const account = accounts.find((a) => a.id === s.message.accountId)

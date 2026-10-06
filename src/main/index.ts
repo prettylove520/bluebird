@@ -185,7 +185,7 @@ function createWindow(): void {
     height: 840,
     minWidth: 960,
     minHeight: 600,
-    title: 'Bluebird',
+    title: 'Bluebird Mail',
     icon: appIcon(),
     show: false,
     autoHideMenuBar: true,
@@ -354,7 +354,7 @@ function watch(account: Account): void {
       }
       const silent = !n.sound
       const options = !n.showContent
-        ? { title: 'Bluebird', body: `${account.email} 有 ${mails.length} 封新邮件`, silent }
+        ? { title: 'Bluebird Mail', body: `${account.email} 有 ${mails.length} 封新邮件`, silent }
         : mails.length === 1
           ? { title: mails[0].from, body: mails[0].subject, silent }
           : { title: `${account.email} 收到 ${mails.length} 封新邮件`, body: mails.map((m) => m.subject).slice(0, 3).join('\n'), silent }
@@ -550,7 +550,7 @@ function tick(): void {
   }
   if (missed.length) {
     const ids = new Set(missed.map((m) => m.id))
-    const error = `已经过了计划时间 ${MISSED_HOURS} 个多小时（当时 Bluebird 没有运行），没有自动发出。`
+    const error = `已经过了计划时间 ${MISSED_HOURS} 个多小时（当时 Bluebird Mail 没有运行），没有自动发出。`
     updateData({ scheduled: getData().scheduled.map((s) => (ids.has(s.id) ? { ...s, error, held: true } : s)) })
     pushData()
     showNote(
@@ -568,10 +568,10 @@ function applySettings(): void {
 
   if (g.closeToTray && !tray) {
     tray = new Tray(appIcon().resize({ width: 16, height: 16 }))
-    tray.setToolTip('Bluebird')
+    tray.setToolTip('Bluebird Mail')
     tray.setContextMenu(
       Menu.buildFromTemplate([
-        { label: '打开 Bluebird', click: () => showWindow() },
+        { label: '打开 Bluebird Mail', click: () => showWindow() },
         {
           label: '写邮件',
           click: () => {
@@ -1228,7 +1228,7 @@ function registerIpc(): void {
   handle('backup:pickFile', async () => {
     const cfg = backupInfo()
     const res = await dialog.showOpenDialog(win!, {
-      title: '选择 Bluebird 的备份文件',
+      title: '选择 Bluebird Mail 的备份文件',
       defaultPath: cfg.folder ? join(cfg.folder, BACKUP_FILE) : undefined,
       properties: ['openFile'],
       filters: [{ name: 'Bluebird 备份', extensions: ['bbk'] }]
@@ -1318,7 +1318,7 @@ function registerIpc(): void {
   })
   handle('notify:test', () => {
     if (!Notification.isSupported()) return { supported: false }
-    showNote({ title: 'Bluebird 测试通知', body: '能看到这一条，说明新邮件通知可以正常弹出。', silent: !getSettings().notify.sound }, () => showWindow())
+    showNote({ title: 'Bluebird Mail 测试通知', body: '能看到这一条，说明新邮件通知可以正常弹出。', silent: !getSettings().notify.sound }, () => showWindow())
     return { supported: true }
   })
 
@@ -1449,7 +1449,7 @@ app.whenReady().then(() => {
       if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
         showNote(
           {
-            title: s.state === 'available' ? 'Bluebird 发现新版本' : 'Bluebird 新版本已下载好',
+            title: s.state === 'available' ? 'Bluebird Mail 发现新版本' : 'Bluebird Mail 新版本已下载好',
             body: s.state === 'available' ? `${s.version} 可以更新了，点这里打开程序，再决定要不要下载` : `${s.version} 已经下载好，点这里打开程序，再点「重启并更新」`,
             silent: true
           },

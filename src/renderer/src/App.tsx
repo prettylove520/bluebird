@@ -1489,9 +1489,9 @@ export default function App() {
     const mine = accounts.find((a) => a.id === d.accountId)?.email || '你的邮箱'
     const message =
       d.unsubscribe === 'oneclick'
-        ? `这个发件人支持一键退订：Bluebird 会直接向对方的退订服务${d.unsubscribeTarget ? `（${d.unsubscribeTarget}）` : ''}提交请求，不用打开网页。对方一般需要几天才会完全停止发送。`
+        ? `这个发件人支持一键退订：Bluebird Mail 会直接向对方的退订服务${d.unsubscribeTarget ? `（${d.unsubscribeTarget}）` : ''}提交请求，不用打开网页。对方一般需要几天才会完全停止发送。`
         : d.unsubscribe === 'mail'
-          ? `这个发件人要求用邮件退订：Bluebird 会用 ${mine} 给 ${d.unsubscribeTarget || '对方的退订地址'} 发一封退订邮件（会留在「已发送」里）。对方一般需要几天才会完全停止发送。`
+          ? `这个发件人要求用邮件退订：Bluebird Mail 会用 ${mine} 给 ${d.unsubscribeTarget || '对方的退订地址'} 发一封退订邮件（会留在「已发送」里）。对方一般需要几天才会完全停止发送。`
           : `这个发件人只提供了网页退订：会在浏览器里打开对方的退订页面${d.unsubscribeTarget ? `（${d.unsubscribeTarget}）` : ''}，请按页面上的提示完成。`
     setConfirm({
       title: `退订「${who}」的邮件？`,
@@ -3071,13 +3071,13 @@ export default function App() {
             <div className="welcome-mark">
               <Icon name="inbox" size={30} />
             </div>
-            <h1>欢迎使用 Bluebird</h1>
+            <h1>欢迎使用 Bluebird Mail</h1>
             <p>把 QQ、163、企业邮箱和 Gmail、Outlook 放在一个地方收发。先添加你的第一个邮箱吧。</p>
             <button className="primary-btn large" onClick={() => setDialog({ kind: 'add' })}>
               添加邮箱
             </button>
             <button className="link-btn welcome-restore" onClick={() => setDialog({ kind: 'settings', tab: 'backup' })}>
-              以前用过 Bluebird？从备份恢复
+              以前用过 Bluebird Mail？从备份恢复
             </button>
           </div>
         </main>

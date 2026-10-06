@@ -129,12 +129,12 @@ export async function startOAuth(
       const gotCode = url.searchParams.get('code')
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' })
       if (err || !gotCode || url.searchParams.get('state') !== state) {
-        res.end(PAGE('登录没有完成', '可以关闭这个页面，回到 Bluebird 重试。'))
+        res.end(PAGE('登录没有完成', '可以关闭这个页面，回到 Bluebird Mail 重试。'))
         finish()
         reject(new Error(err === 'access_denied' ? '你取消了授权' : `授权失败：${err || '参数不正确'}`))
         return
       }
-      res.end(PAGE('登录成功', '可以关闭这个页面，回到 Bluebird 了。'))
+      res.end(PAGE('登录成功', '可以关闭这个页面，回到 Bluebird Mail 了。'))
       finish()
       resolve({ code: gotCode, redirectUri })
     })

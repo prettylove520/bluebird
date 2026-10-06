@@ -20,7 +20,7 @@ nsis:
   perMachine: false
   allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
-  shortcutName: Bluebird
+  shortcutName: Bluebird Mail
   # 卸载或升级时保留账号和设置
   deleteAppDataOnUninstall: false
 npmRebuild: false

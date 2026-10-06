@@ -377,7 +377,7 @@ export function SettingsDialog(props: Props) {
                 </Row>
                 <Row
                   title="开机自动启动"
-                  hint={props.info && !props.info.packaged ? '现在是开发运行方式，这一项要打包成安装程序后才会生效' : '登录 Windows 后自动打开 Bluebird'}
+                  hint={props.info && !props.info.packaged ? '现在是开发运行方式，这一项要打包成安装程序后才会生效' : '登录 Windows 后自动打开 Bluebird Mail'}
                 >
                   <Switch label="开机自动启动" checked={general.launchAtLogin} onChange={(launchAtLogin) => setGeneral({ launchAtLogin })} />
                 </Row>
@@ -449,7 +449,7 @@ export function SettingsDialog(props: Props) {
                 </Row>
                 <div className="set-block">
                   <div className="set-title">主屏背景</div>
-                  <div className="set-hint">内置的几张是 Bluebird 自己画的插画；想用喜欢的动画、游戏壁纸，点下面的「选择图片」换成自己的</div>
+                  <div className="set-hint">内置的几张是 Bluebird Mail 自己画的插画；想用喜欢的动画、游戏壁纸，点下面的「选择图片」换成自己的</div>
                   <div className="bg-grid">
                     {HOME_SCENES.map((sc) => (
                       <button
@@ -520,7 +520,7 @@ export function SettingsDialog(props: Props) {
                     </button>
                   </div>
                 </div>
-                <Row title="启动时显示主屏" hint="打开 Bluebird 先看到时间、问候和未读数，而不是直接进入收件箱">
+                <Row title="启动时显示主屏" hint="打开 Bluebird Mail 先看到时间、问候和未读数，而不是直接进入收件箱">
                   <Switch label="启动时显示主屏" checked={general.showHome} onChange={(showHome) => setGeneral({ showHome })} />
                 </Row>
               </div>
@@ -621,7 +621,7 @@ export function SettingsDialog(props: Props) {
 
             {tab === 'ai' && (
               <div className="set-list">
-                <Row title="启用 AI 助手" hint="打开后，读邮件时有「AI 总结」，写邮件时有「AI 写作」。只有你点了这些按钮，才会把那一封邮件的文字发给你选的服务商；Bluebird 不会在后台自己去读你的邮件">
+                <Row title="启用 AI 助手" hint="打开后，读邮件时有「AI 总结」，写邮件时有「AI 写作」。只有你点了这些按钮，才会把那一封邮件的文字发给你选的服务商；Bluebird Mail 不会在后台自己去读你的邮件">
                   <Switch label="启用 AI 助手" checked={draft.ai.enabled} onChange={(enabled) => setAi({ enabled })} />
                 </Row>
                 <AiConnect ai={draft.ai} setAi={setAi} notify={props.notify} confirm={props.confirm} />
@@ -666,7 +666,7 @@ export function SettingsDialog(props: Props) {
                 <Row title="通知声音">
                   <Switch label="通知声音" checked={notify.sound} onChange={(sound) => setNotify({ sound })} />
                 </Row>
-                <Row title="测试通知" hint="点一下，右下角应该弹出一条通知。没弹出来的话，多半是 Windows 的「请勿打扰」开着，或者在「系统设置 → 通知」里把 Bluebird 的通知关了">
+                <Row title="测试通知" hint="点一下，右下角应该弹出一条通知。没弹出来的话，多半是 Windows 的「请勿打扰」开着，或者在「系统设置 → 通知」里把 Bluebird Mail 的通知关了">
                   <TestNotifyButton />
                 </Row>
                 <Row title="通知里显示发件人和主题" hint="关闭后只提示「有新邮件」，旁人看不到内容">
@@ -749,7 +749,7 @@ export function SettingsDialog(props: Props) {
             {tab === 'proxy' && (
               <div className="form-stack">
                 <p className="muted">
-                  Gmail、Outlook 这类国外邮箱在国内需要代理。这里填你电脑上代理软件的本地地址就行，是 SOCKS5 还是 HTTP 不用选，Bluebird 自己会识别。
+                  Gmail、Outlook 这类国外邮箱在国内需要代理。这里填你电脑上代理软件的本地地址就行，是 SOCKS5 还是 HTTP 不用选，Bluebird Mail 自己会识别。
                   哪些邮箱走代理，在每个账号里单独设置：国外邮箱默认走，国内邮箱默认直连。
                 </p>
                 <label className="check">
@@ -804,7 +804,7 @@ export function SettingsDialog(props: Props) {
                     <button className="link-btn" onClick={() => void api.openExternal('https://console.cloud.google.com/projectcreate')}>
                       Google Cloud 后台
                     </button>
-                    ，新建一个项目（名字随意，比如 Bluebird）。
+                    ，新建一个项目（名字随意，比如 Bluebird Mail）。
                   </li>
                   <li>
                     进入{' '}
@@ -867,7 +867,7 @@ export function SettingsDialog(props: Props) {
                     <Icon name="inbox" size={26} />
                   </div>
                   <div>
-                    <strong>Bluebird</strong>
+                    <strong>Bluebird Mail</strong>
                     <p className="muted">版本 {props.info?.version ?? '0.1.0'}</p>
                   </div>
                 </div>
@@ -1137,7 +1137,7 @@ function AiConnect({ ai, setAi, notify, confirm }: { ai: Settings['ai']; setAi: 
 
   return (
     <>
-      <Row title="服务商" hint="用你自己的账号和密钥直接连，不经过 Bluebird 的任何服务器。国内的服务不用代理，Claude 和 OpenAI 需要开着代理">
+      <Row title="服务商" hint="用你自己的账号和密钥直接连，不经过 Bluebird Mail 的任何服务器。国内的服务不用代理，Claude 和 OpenAI 需要开着代理">
         <select
           value={ai.preset}
           onChange={(e) => {

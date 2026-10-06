@@ -89,7 +89,7 @@ export function RulesPanel(props: {
       <section className="addr-block">
         <h3>邮件规则</h3>
         <p className="muted small">
-          新邮件到达收件箱时，按下面的规则自动处理，从上到下依次看。邮件被移走、归档或删除以后，后面的规则就不再处理它。规则在这台电脑上执行：Bluebird 没开着的时候不会处理，开着以后到达的邮件才会处理。
+          新邮件到达收件箱时，按下面的规则自动处理，从上到下依次看。邮件被移走、归档或删除以后，后面的规则就不再处理它。规则在这台电脑上执行：Bluebird Mail 没开着的时候不会处理，开着以后到达的邮件才会处理。
         </p>
         {!rules.length && <p className="muted small">还没有规则。比如：「发件人含 newsletter → 标为已读并归档」。</p>}
         {rules.map((r, i) => {

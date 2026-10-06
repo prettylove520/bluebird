@@ -48,7 +48,7 @@ export function Sidebar(props: Props) {
   return (
     <aside className="sidebar">
       <div className="sidebar-top titlebar-drag">
-        <span className="app-name">Bluebird</span>
+        <span className="app-name">Bluebird Mail</span>
       </div>
 
       <div className="sidebar-actions">
