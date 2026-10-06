@@ -62,7 +62,7 @@ const defaultSettings: Settings = {
   compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
   notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
   translate: { target: 'ZH' },
-  ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat', language: 'zh', tone: 'friendly' }
+  ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', customName: '', language: 'zh', tone: 'friendly' }
 }
 
 /** 撤销发送等待的秒数：0 是关闭，最长 60 秒 */
@@ -92,6 +92,7 @@ export function cleanAi(a: Settings['ai']): Settings['ai'] {
     style: a.style === 'anthropic' ? 'anthropic' : 'openai',
     baseUrl: text(a.baseUrl, d.baseUrl).replace(/\/+$/, ''),
     model: text(a.model, d.model),
+    customName: text(a.customName, '').slice(0, 40),
     language: a.language === 'en' ? 'en' : 'zh',
     tone: ['friendly', 'formal', 'concise'].includes(a.tone) ? a.tone : d.tone
   }
@@ -299,10 +300,15 @@ export function setTranslateKey(key: string): void {
   writeJson('secrets.json', s)
 }
 
+// AI 密钥按「接口地址的主机名」分开保存：每个服务商各填各的，换服务商不用重填，
+// 也不会把填给 A 的密钥发到 B。早期版本只有一把密钥（__ai__），算在当时设置里的那个主机名下。
 const AI_KEY_ID = '__ai__'
+const aiKeyId = (host: string): string => `${AI_KEY_ID}:${host}`
 
-export function getAiKey(): string | undefined {
-  const v = loadSecrets()[AI_KEY_ID]
+export function getAiKey(host: string): string | undefined {
+  if (!host) return undefined
+  const all = loadSecrets()
+  const v = all[aiKeyId(host)] ?? (host === savedAiHost() ? all[AI_KEY_ID] : undefined)
   if (!v) return undefined
   try {
     return decrypt(v) || undefined
@@ -311,10 +317,22 @@ export function getAiKey(): string | undefined {
   }
 }
 
-export function setAiKey(key: string): void {
+function savedAiHost(): string {
+  try {
+    return new URL(getSettings().ai.baseUrl).host.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
+export function setAiKey(host: string, key: string): void {
+  if (!host) return
   const s = loadSecrets()
-  if (key) s[AI_KEY_ID] = encrypt(key)
-  else delete s[AI_KEY_ID]
+  if (key) s[aiKeyId(host)] = encrypt(key)
+  else {
+    delete s[aiKeyId(host)]
+    if (host === savedAiHost()) delete s[AI_KEY_ID]
+  }
   writeJson('secrets.json', s)
 }
 
@@ -346,7 +364,7 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   const keep = loadSecrets()[BACKUP_KEY_ID]
   // 翻译密钥是这台电脑上填的，备份里没有，恢复时原样留着
   const keepTranslate = loadSecrets()[TRANSLATE_KEY_ID]
-  const keepAi = loadSecrets()[AI_KEY_ID]
+  const keepAi = Object.entries(loadSecrets()).filter(([k]) => k === AI_KEY_ID || k.startsWith(AI_KEY_ID + ':'))
   const next: Record<string, string> = {}
   for (const a of c.accounts) {
     const secret = data.secrets[a.id]
@@ -354,7 +372,7 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   }
   if (keep) next[BACKUP_KEY_ID] = keep
   if (keepTranslate) next[TRANSLATE_KEY_ID] = keepTranslate
-  if (keepAi) next[AI_KEY_ID] = keepAi
+  for (const [k, v] of keepAi) next[k] = v
   secrets = next
   writeJson('secrets.json', next)
   dropSecretsBackup()

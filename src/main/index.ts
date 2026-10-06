@@ -42,7 +42,8 @@ import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSett
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
-import { aiInfo, runAi, testAi } from './ai'
+import { aiInfo, listModels, runAi, testAi, verifyKey } from './ai'
+import { aiHost } from '../shared/ai'
 import type { AiRequest } from '../shared/ai'
 import { checkForUpdate, checkIfStale, downloadUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
@@ -1183,17 +1184,22 @@ function registerIpc(): void {
   handle('translate:usage', () => translateUsage())
   handle('translate:texts', (texts: string[], xml: boolean) => translateTexts(texts, !!xml))
   // AI 助手。密钥只进不出：界面只知道「填了没有」和最后四位
-  handle('ai:info', () => aiInfo())
+  handle('ai:info', (candidate: Settings['ai']) => aiInfo(cleanAi(candidate)))
   handle('ai:setKey', async (key: string, candidate: Settings['ai']) => {
     const k = String(key || '').trim()
+    const ai = cleanAi(candidate)
+    const host = aiHost(ai.baseUrl)
+    if (!host) throw new Error('先填好接口地址，再保存密钥（密钥只会发到这个地址）')
+    let note: string | undefined
     if (k) {
       if (k.length < 8 || k.length > 400 || /\s/.test(k)) throw new Error('这不像是一个 API 密钥。密钥是一长串字母数字，中间没有空格，请重新复制一下')
-      // 先用界面上选的服务商试一下，不能用就不保存
-      await testAi(cleanAi(candidate), k)
+      // 先向服务商确认一下，不能用就不保存
+      note = (await verifyKey(ai, k)).note
     }
-    setAiKey(k)
-    return aiInfo()
+    setAiKey(host, k)
+    return { ...aiInfo(ai), note }
   })
+  handle('ai:models', (candidate: Settings['ai']) => listModels(cleanAi(candidate)))
   handle('ai:test', (candidate: Settings['ai']) => testAi(cleanAi(candidate)))
   handle('ai:run', (req: AiRequest) => runAi(req))
   handle('update:status', () => updateStatus())

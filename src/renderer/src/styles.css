@@ -4585,3 +4585,101 @@ kbd {
 .format-bar > button.ai-tool.on {
   background: var(--accent-soft);
 }
+
+/* AI 设置：模型选择 */
+.set-sub {
+  margin-left: 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.mp-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 8px;
+}
+.model-picker {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.mp-field {
+  display: flex;
+  align-items: stretch;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.mp-field input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: 7px 10px;
+  color: var(--ink);
+  font: inherit;
+  outline: none;
+}
+.mp-field:focus-within {
+  border-color: var(--accent);
+}
+.mp-arrow {
+  width: 34px;
+  display: grid;
+  place-items: center;
+  color: var(--ink-2);
+}
+.mp-arrow:hover:not(:disabled) {
+  background: var(--bg-hover);
+}
+.mp-arrow:disabled {
+  opacity: 0.4;
+}
+.mp-arrow .icon {
+  transform: rotate(90deg);
+  transition: transform 0.12s;
+}
+.mp-arrow.open .icon {
+  transform: rotate(-90deg);
+}
+/* 列表直接铺在输入框下面（不浮起来）：设置页自己会滚动，浮起来的会被窗口边缘截掉 */
+.mp-list {
+  margin: 6px 0 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 4px;
+  list-style: none;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+}
+.mp-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.mp-list li:hover,
+.mp-list li.hi {
+  background: var(--bg-hover);
+}
+.mp-list li.on {
+  color: var(--accent);
+  font-weight: 600;
+}
+.mp-list li.mp-head,
+.mp-list li.mp-none {
+  cursor: default;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.mp-list li.mp-head:hover,
+.mp-list li.mp-none:hover {
+  background: transparent;
+}

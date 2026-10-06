@@ -5,7 +5,7 @@
 // 只有你点了「AI 总结」「AI 写作」这类按钮时，才会把那一封邮件的文字发给服务商，不会自己在后台去读你的邮件。
 
 import type { AiSettings } from '../shared/types'
-import { AI_TONES, type AiMail, type AiRequest } from '../shared/ai'
+import { AI_TONES, aiHost, type AiMail, type AiRequest } from '../shared/ai'
 import { httpFetch } from './net'
 import { getAiKey, getSettings } from './store'
 
@@ -132,19 +132,34 @@ function endpoint(ai: AiSettings): string {
 /** 国外的服务国内多半要代理：先走代理，不通再直连；国内的反过来 */
 const FOREIGN = /(^|\.)(anthropic\.com|openai\.com|openrouter\.ai|groq\.com|x\.ai|mistral\.ai|googleapis\.com|together\.xyz|fireworks\.ai)$/i
 
-function validate(ai: AiSettings): URL {
+/** 接口地址能不能用（密钥会发到这个地址，所以必须是加密连接，本机的除外） */
+function checkBase(ai: AiSettings): URL {
   if (!ai.baseUrl) throw new Error('还没有填接口地址。请到「设置 → AI」里选一个服务商，或者填上地址')
-  if (!ai.model) throw new Error('还没有填模型名。请到「设置 → AI」里填上')
   let url: URL
   try {
-    url = new URL(endpoint(ai))
+    url = new URL(ai.baseUrl)
   } catch {
     throw new Error('接口地址写得不对，应该像 https://api.deepseek.com/v1 这样')
   }
   const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(url.hostname)
-  // 密钥会发到这个地址：除了本机（比如自己跑的 Ollama），必须是加密连接
   if (url.protocol !== 'https:' && !(local && url.protocol === 'http:')) throw new Error('接口地址必须以 https:// 开头（本机自己跑的模型可以用 http://localhost）')
   return url
+}
+
+function validate(ai: AiSettings): URL {
+  if (!ai.model) throw new Error('还没有选模型。请到「设置 → AI」里选一个，或者直接填上模型名')
+  checkBase(ai)
+  return new URL(endpoint(ai))
+}
+
+/** 服务商返回了 HTTP 错误：带上状态码，调用的地方可以据此判断（比如「这个服务不提供模型列表」） */
+class AiHttpError extends Error {
+  constructor(
+    message: string,
+    readonly status: number
+  ) {
+    super(message)
+  }
 }
 
 function explain(status: number, body: string, ai: AiSettings): Error {
@@ -157,13 +172,15 @@ function explain(status: number, body: string, ai: AiSettings): Error {
   }
   detail = detail.replace(/\s+/g, ' ').slice(0, 160)
   const tail = detail ? `（服务商说：${detail}）` : ''
-  if (status === 401 || status === 403) return new Error(`服务商不认这个密钥，或者这个密钥没有权限用「${ai.model}」。请到「设置 → AI」里重新填一下${tail}`)
-  if (status === 402) return new Error(`服务商提示账户余额不足，请先充值${tail}`)
-  if (status === 404) return new Error(`找不到这个接口或模型。请检查「设置 → AI」里的接口地址和模型名（现在是「${ai.model}」）${tail}`)
-  if (status === 429) return new Error(`请求太频繁，或者额度用完了，过一会儿再试${tail}`)
-  if (status === 400) return new Error(`服务商没有接受这次请求，多半是模型名不对或者邮件太长${tail}`)
-  if (status >= 500) return new Error(`服务商那边出了问题（${status}），过一会儿再试${tail}`)
-  return new Error(`服务商返回了错误（${status}）${tail}`)
+  const E = (m: string): Error => new AiHttpError(m, status)
+  const what = ai.model ? `用「${ai.model}」` : '访问'
+  if (status === 401 || status === 403) return E(`服务商不认这个密钥，或者这个密钥没有权限${what}。请到「设置 → AI」里重新填一下${tail}`)
+  if (status === 402) return E(`服务商提示账户余额不足，请先充值${tail}`)
+  if (status === 404) return E(`找不到这个接口或模型。请检查「设置 → AI」里的接口地址和模型名（现在是「${ai.model || '没有填'}」）${tail}`)
+  if (status === 429) return E(`请求太频繁，或者额度用完了，过一会儿再试${tail}`)
+  if (status === 400) return E(`服务商没有接受这次请求，多半是模型名不对或者邮件太长${tail}`)
+  if (status >= 500) return E(`服务商那边出了问题（${status}），过一会儿再试${tail}`)
+  return E(`服务商返回了错误（${status}）${tail}`)
 }
 
 /** 有的模型会把思考过程放在 <think> 里一起返回，去掉 */
@@ -233,15 +250,16 @@ async function chat(ai: AiSettings, key: string, system: string, user: string, m
 
 // ---------------- 对外 ----------------
 
-export function aiInfo(): { hasKey: boolean; tail: string } {
-  const key = getAiKey() || ''
+/** 这个服务商（按接口地址的主机名）有没有填过密钥 */
+export function aiInfo(candidate: AiSettings): { hasKey: boolean; tail: string } {
+  const key = getAiKey(aiHost(candidate.baseUrl)) || ''
   return { hasKey: !!key, tail: key ? key.slice(-4) : '' }
 }
 
 function ready(): { ai: AiSettings; key: string } {
   const ai = getSettings().ai
   if (!ai.enabled) throw new Error('AI 助手还没有开启。请到「设置 → AI」里打开')
-  const key = getAiKey()
+  const key = getAiKey(aiHost(ai.baseUrl))
   if (!key) throw new Error('还没有填 AI 的密钥。请到「设置 → AI」里填上')
   return { ai, key }
 }
@@ -259,9 +277,131 @@ export async function runAi(req: AiRequest): Promise<string> {
 
 /** 测试这组设置能不能用：用界面上还没保存的设置去试，成功返回用时 */
 export async function testAi(candidate: AiSettings, key?: string): Promise<{ ms: number }> {
-  const k = key || getAiKey()
+  const k = key || getAiKey(aiHost(candidate.baseUrl))
   if (!k) throw new Error('还没有填 AI 的密钥')
   const started = Date.now()
   await chat(candidate, k, '你是测试助手。', '请只回复两个字：好的', 20)
   return { ms: Date.now() - started }
+}
+
+// ---------------- 模型列表 ----------------
+
+/** 不是用来聊天写字的模型（向量、语音、画图、审核……），列表里不显示 */
+const NOT_CHAT = /(embed|rerank|moderation|whisper|transcribe|tts|speech|audio|realtime|dall-e|gpt-image|image-|-image|sora|video|stable-diffusion|flux|asr|paraformer|cosyvoice|sensevoice|wanx|text2|ocr|guard|safeguard)/i
+/** 自动挑默认模型时跳过的：偏门的（视觉、推理、代码、预览版……）。用户自己仍然可以选 */
+const SKIP_PICK = /(vision|-vl\b|exp\b|preview|thinking|reason|search|codex|coder|-code|deep-research|embed)/i
+/** 各服务商挑默认模型的偏好：写邮件、总结用便宜快的主力型号就够 */
+const PICK: Record<string, RegExp[]> = {
+  deepseek: [/^deepseek-(v[\d.]+-)?flash$/i, /flash/i, /chat/i],
+  qwen: [/^qwen[\d.]*-plus$/i, /plus/i, /flash|turbo/i],
+  kimi: [/^kimi-k[\d.]+$/i, /^kimi-k/i],
+  glm: [/^glm-[\d.]+-flash$/i, /^glm-[\d.]+$/i, /flash/i],
+  claude: [/sonnet/i, /haiku/i],
+  openai: [/^gpt-[\d.]+-(mini|luna)$/i, /mini|luna/i, /^gpt-/i],
+  custom: [/(^|[-_:.])(flash|mini|haiku|lite|small|turbo|plus|luna)([-_:.]|$)/i]
+}
+
+export interface AiModels {
+  models: string[]
+  /** 推荐的默认模型（列表里挑的），挑不出来就是空 */
+  suggested: string
+}
+
+function modelsEndpoint(ai: AiSettings): string {
+  const base = ai.baseUrl.replace(/\/+$/, '')
+  if (ai.style === 'anthropic') return /\/v\d+$/.test(base) ? `${base}/models?limit=1000` : `${base}/v1/models?limit=1000`
+  return `${base}/models`
+}
+
+type RawModel = string | { id?: string; name?: string; model?: string; created?: number; created_at?: string }
+
+/** 从服务商返回的各种格式里取出模型：{data:[{id}]}（OpenAI、Claude 及兼容的）、{models:[…]}（Ollama 等）、直接是数组 */
+function parseModels(json: unknown): { id: string; time: number }[] {
+  const j = json as { data?: unknown; models?: unknown }
+  const list = (Array.isArray(json) ? json : Array.isArray(j?.data) ? j.data : Array.isArray(j?.models) ? j.models : []) as RawModel[]
+  const out: { id: string; time: number }[] = []
+  for (const m of list) {
+    const raw = typeof m === 'string' ? m : m?.id || m?.model || m?.name || ''
+    const id = String(raw).replace(/^models\//, '').trim()
+    if (!id || id.length > 120) continue
+    const t = typeof m === 'object' && m ? (typeof m.created === 'number' ? m.created : m.created_at ? Date.parse(m.created_at) / 1000 : 0) : 0
+    out.push({ id, time: Number.isFinite(t) ? t : 0 })
+  }
+  return out
+}
+
+/** 新的排前面：有创建时间的按时间，没有的按名字里的版本号（qwen3.7 排在 qwen3.5 前面） */
+function sortNewest(items: { id: string; time: number }[]): string[] {
+  const dated = items.filter((i) => i.time > 0).length >= items.length * 0.8
+  const sorted = [...items].sort((a, b) => (dated && a.time !== b.time ? b.time - a.time : b.id.localeCompare(a.id, 'en', { numeric: true })))
+  return sorted.map((i) => i.id)
+}
+
+export function suggestModel(preset: string, list: string[]): string {
+  const ok = list.filter((m) => !SKIP_PICK.test(m))
+  for (const re of PICK[preset] || []) {
+    const hit = ok.find((m) => re.test(m))
+    if (hit) return hit
+  }
+  return ok[0] || ''
+}
+
+/** 向服务商要它现在有哪些模型。用界面上还没保存的设置和（已保存的）密钥去问 */
+export async function listModels(candidate: AiSettings, key?: string): Promise<AiModels> {
+  const base = checkBase(candidate)
+  const k = key || getAiKey(aiHost(candidate.baseUrl))
+  if (!k) throw new Error('还没有填这个服务商的密钥，填好并保存后会自动获取模型列表')
+  const headers: Record<string, string> = {}
+  if (candidate.style === 'anthropic') {
+    headers['x-api-key'] = k
+    headers['anthropic-version'] = '2023-06-01'
+  } else headers.Authorization = `Bearer ${k}`
+  let res: Response
+  try {
+    res = await httpFetch(modelsEndpoint(candidate), { method: 'GET', headers, redirect: 'error', credentials: 'omit', useProxy: FOREIGN.test(base.hostname), timeoutMs: 30000 })
+  } catch (err) {
+    const aborted = (err as Error).name === 'AbortError'
+    throw new Error(aborted ? '服务商半天没有回应，过一会儿再试（国外的服务请确认代理软件开着）' : `连不上 AI 服务（${base.hostname}）。请检查网络${FOREIGN.test(base.hostname) ? '，国外的服务需要在「设置 → 代理」里启用代理' : ''}`)
+  }
+  const raw = await res.text()
+  if (!res.ok) throw explain(res.status, raw, { ...candidate, model: '' })
+  let json: unknown
+  try {
+    json = JSON.parse(raw)
+  } catch {
+    throw new Error('服务商返回的模型列表看不懂，请检查接口地址是不是写对了')
+  }
+  const items = parseModels(json)
+  const chatty = items.filter((i) => !NOT_CHAT.test(i.id))
+  const pool = chatty.length ? chatty : items
+  // 带日期的快照（qwen3.7-plus-2026-09-01）在有不带日期的正式名字时不显示，免得列表又长又乱
+  const ids = new Set(pool.map((i) => i.id))
+  const tidy = pool.filter((i) => !(/-(\d{4}-\d{2}-\d{2}|\d{8}|\d{6}|\d{4})$/.test(i.id) && ids.has(i.id.replace(/-(\d{4}-\d{2}-\d{2}|\d{8}|\d{6}|\d{4})$/, ''))))
+  const models = sortNewest(tidy).slice(0, 400)
+  return { models, suggested: suggestModel(candidate.preset, models) }
+}
+
+/**
+ * 保存密钥前先确认它有效：优先向服务商要模型列表（不依赖任何具体型号，不会被「旧模型已下线」拖累）；
+ * 服务商不提供列表的，退回去用现在选的模型发一句话试试。返回 note 时说明没能完全确认
+ */
+export async function verifyKey(candidate: AiSettings, key: string): Promise<{ note?: string }> {
+  try {
+    await listModels(candidate, key)
+    return {}
+  } catch (err) {
+    const status = err instanceof AiHttpError ? err.status : 0
+    // 密钥不对、连不上这类：不用往下试了
+    if (!status || status === 401 || status === 403 || status === 402 || status === 429 || status >= 500) throw err
+  }
+  // 这个服务商没有模型列表（404 / 405 等）
+  if (!candidate.model) return { note: '这个服务商不提供模型列表，密钥已保存。请自己填上模型名，再点「测试连接」确认' }
+  try {
+    await chat(candidate, key, '你是测试助手。', '请只回复两个字：好的', 20)
+    return {}
+  } catch (err) {
+    const status = err instanceof AiHttpError ? err.status : 0
+    if (status === 401 || status === 403 || !status) throw err
+    return { note: `密钥已保存，但用「${candidate.model}」试了一下没成功（${(err as Error).message}）。请检查模型名，再点「测试连接」` }
+  }
 }

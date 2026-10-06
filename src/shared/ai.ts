@@ -9,7 +9,7 @@ export interface AiPreset {
   style: AiStyle
   baseUrl: string
   model: string
-  /** 常用的模型名，填模型时给个参考（不限于这些，服务商出了新模型可以直接填） */
+  /** 联网获取不到模型列表时给的参考（会过时，以服务商返回的列表为准） */
   models: string[]
   /** 到哪里申请密钥 */
   keyUrl: string
@@ -23,8 +23,8 @@ export const AI_PRESETS: AiPreset[] = [
     label: 'DeepSeek（深度求索）',
     style: 'openai',
     baseUrl: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
-    models: ['deepseek-chat', 'deepseek-reasoner'],
+    model: 'deepseek-flash',
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
     keyUrl: 'https://platform.deepseek.com/api_keys',
     direct: true
   },
@@ -33,8 +33,8 @@ export const AI_PRESETS: AiPreset[] = [
     label: '通义千问（阿里云百炼）',
     style: 'openai',
     baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    model: 'qwen-plus',
-    models: ['qwen-plus', 'qwen-turbo', 'qwen-max'],
+    model: 'qwen3.7-plus',
+    models: ['qwen3.7-plus', 'qwen3.7-max', 'qwen3.7-flash'],
     keyUrl: 'https://bailian.console.aliyun.com/?apiKey=1',
     direct: true
   },
@@ -43,8 +43,8 @@ export const AI_PRESETS: AiPreset[] = [
     label: 'Kimi（月之暗面）',
     style: 'openai',
     baseUrl: 'https://api.moonshot.cn/v1',
-    model: 'moonshot-v1-32k',
-    models: ['moonshot-v1-8k', 'moonshot-v1-32k', 'moonshot-v1-128k'],
+    model: 'kimi-k3',
+    models: ['kimi-k3', 'kimi-k2.6'],
     keyUrl: 'https://platform.moonshot.cn/console/api-keys',
     direct: true
   },
@@ -53,8 +53,8 @@ export const AI_PRESETS: AiPreset[] = [
     label: '智谱 GLM',
     style: 'openai',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    model: 'glm-4-flash',
-    models: ['glm-4-flash', 'glm-4-plus', 'glm-4-air'],
+    model: 'glm-5.3-Flash',
+    models: ['glm-5.3-Flash', 'glm-5.3', 'glm-4.7-flash'],
     keyUrl: 'https://open.bigmodel.cn/usercenter/apikeys',
     direct: true
   },
@@ -64,7 +64,7 @@ export const AI_PRESETS: AiPreset[] = [
     style: 'anthropic',
     baseUrl: 'https://api.anthropic.com',
     model: 'claude-sonnet-5-5',
-    models: ['claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'claude-opus-5-5'],
+    models: ['claude-sonnet-5-5', 'claude-haiku-4-5-20251001', 'claude-opus-5-5', 'claude-fable-5-1'],
     keyUrl: 'https://console.anthropic.com/settings/keys',
     direct: false
   },
@@ -73,8 +73,8 @@ export const AI_PRESETS: AiPreset[] = [
     label: 'OpenAI',
     style: 'openai',
     baseUrl: 'https://api.openai.com/v1',
-    model: 'gpt-4o-mini',
-    models: ['gpt-4o-mini', 'gpt-4o'],
+    model: 'gpt-6-luna',
+    models: ['gpt-6-luna', 'gpt-6-astra'],
     keyUrl: 'https://platform.openai.com/api-keys',
     direct: false
   },
@@ -89,6 +89,35 @@ export const AI_PRESETS: AiPreset[] = [
     direct: true
   }
 ]
+
+/** 以前版本预设里的模型名。其中不少服务商已经下线，设置里遇到它们会自动换成服务商现有的模型 */
+export const LEGACY_MODELS = [
+  'deepseek-chat',
+  'deepseek-reasoner',
+  'qwen-plus',
+  'qwen-turbo',
+  'qwen-max',
+  'moonshot-v1-8k',
+  'moonshot-v1-32k',
+  'moonshot-v1-128k',
+  'glm-4-flash',
+  'glm-4-plus',
+  'glm-4-air',
+  'gpt-4o-mini',
+  'gpt-4o'
+]
+
+/** 模型名是不是「预设自带的」（不是用户自己特意选的）：这样的名字在服务商没有时可以放心自动换掉 */
+export const isPresetModel = (name: string): boolean => !name || LEGACY_MODELS.includes(name) || AI_PRESETS.some((p) => p.models.includes(name))
+
+/** 接口地址里的主机名（带端口）：密钥按它分开保存，填给 A 服务商的密钥不会被发到 B */
+export function aiHost(baseUrl: string): string {
+  try {
+    return new URL(baseUrl).host.toLowerCase()
+  } catch {
+    return ''
+  }
+}
 
 export const presetOf = (id: string): AiPreset => AI_PRESETS.find((p) => p.id === id) ?? AI_PRESETS[AI_PRESETS.length - 1]
 

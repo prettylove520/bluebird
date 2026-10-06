@@ -62,6 +62,7 @@ const api = {
   translateTexts: invoke('translate:texts'),
   aiInfo: invoke('ai:info'),
   aiSetKey: invoke('ai:setKey'),
+  aiModels: invoke('ai:models'),
   aiTest: invoke('ai:test'),
   aiRun: invoke('ai:run'),
   updateStatus: invoke('update:status'),

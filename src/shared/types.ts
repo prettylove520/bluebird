@@ -122,6 +122,8 @@ export interface AiSettings {
   style: 'anthropic' | 'openai'
   baseUrl: string
   model: string
+  /** 选「其他」时给这个服务商起的名字，只用来显示 */
+  customName: string
   /** 总结邮件用的语言 */
   language: 'zh' | 'en'
   /** 写邮件默认的语气 */

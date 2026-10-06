@@ -1,9 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, AppInfo, ServerConfig, Settings, Template, UpdateStatus, UserData } from '../../../shared/types'
 import { api } from '../api'
 import { accountTags, tagMark } from '../utils'
 import { TARGET_LANGS } from '../translate'
-import { AI_PRESETS, AI_TONES, presetOf } from '../../../shared/ai'
+import { AI_PRESETS, AI_TONES, aiHost, isPresetModel, presetOf } from '../../../shared/ai'
 import { HOME_SCENES, resolveScene, sceneForHour } from './Home'
 import { Icon, type IconName } from './Icon'
 import { BackupPanel } from './BackupPanel'
@@ -606,56 +606,7 @@ export function SettingsDialog(props: Props) {
                 <Row title="启用 AI 助手" hint="打开后，读邮件时有「AI 总结」，写邮件时有「AI 写作」。只有你点了这些按钮，才会把那一封邮件的文字发给你选的服务商；Bluebird 不会在后台自己去读你的邮件">
                   <Switch label="启用 AI 助手" checked={draft.ai.enabled} onChange={(enabled) => setAi({ enabled })} />
                 </Row>
-                <Row title="服务商" hint="用你自己的账号和密钥直接连，不经过 Bluebird 的任何服务器。国内的服务不用代理，Claude 和 OpenAI 需要开着代理">
-                  <select
-                    value={draft.ai.preset}
-                    onChange={(e) => {
-                      const p = presetOf(e.target.value)
-                      setAi(p.id === 'custom' ? { preset: p.id } : { preset: p.id, style: p.style, baseUrl: p.baseUrl, model: p.model })
-                    }}
-                  >
-                    {AI_PRESETS.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.label}
-                      </option>
-                    ))}
-                  </select>
-                </Row>
-                {draft.ai.preset === 'custom' && (
-                  <Row title="接口类型" hint="绝大多数服务（包括自己电脑上跑的 Ollama 等）都选「兼容 OpenAI」">
-                    <select value={draft.ai.style} onChange={(e) => setAi({ style: e.target.value === 'anthropic' ? 'anthropic' : 'openai' })}>
-                      <option value="openai">兼容 OpenAI</option>
-                      <option value="anthropic">Claude 官方格式</option>
-                    </select>
-                  </Row>
-                )}
-                <Row title="接口地址" hint={draft.ai.preset === 'custom' ? '服务商文档里的 Base URL，一般以 /v1 结尾，必须是 https://（本机的可以用 http://localhost）' : '选了服务商会自动填好，一般不用改'}>
-                  <input
-                    className="wide-input"
-                    value={draft.ai.baseUrl}
-                    onChange={(e) => setAi({ baseUrl: e.target.value.trim() })}
-                    placeholder="https://api.example.com/v1"
-                    aria-label="接口地址"
-                    spellCheck={false}
-                  />
-                </Row>
-                <Row title="模型" hint="服务商出了新模型，直接把名字填在这里就行。写邮件和总结用小一点的模型就够，更便宜也更快">
-                  <input
-                    className="wide-input"
-                    list="ai-models"
-                    value={draft.ai.model}
-                    onChange={(e) => setAi({ model: e.target.value.trim() })}
-                    placeholder="模型名"
-                    aria-label="模型"
-                    spellCheck={false}
-                  />
-                  <datalist id="ai-models">
-                    {presetOf(draft.ai.preset).models.map((m) => (
-                      <option key={m} value={m} />
-                    ))}
-                  </datalist>
-                </Row>
-                <AiKeyRow ai={draft.ai} notify={props.notify} confirm={props.confirm} />
+                <AiConnect ai={draft.ai} setAi={setAi} notify={props.notify} confirm={props.confirm} />
                 <Row title="总结用的语言" hint="「AI 总结」把邮件总结成哪种语言。写邮件时会自动和对方邮件用同一种语言">
                   <select value={draft.ai.language} onChange={(e) => setAi({ language: e.target.value === 'en' ? 'en' : 'zh' })}>
                     <option value="zh">简体中文</option>
@@ -974,19 +925,159 @@ export function SettingsDialog(props: Props) {
   )
 }
 
-/** DeepL 密钥：填写、检查、删除。密钥保存后界面再也拿不到它，只显示最后四位 */
-/** AI 密钥：先用界面上选的服务商试一下，能用才保存。密钥只进不出 */
-function AiKeyRow({ ai, notify, confirm }: { ai: Settings['ai']; notify: (msg: string, kind?: 'ok' | 'error') => void; confirm: Props['confirm'] }) {
+/** 模型输入框：可以直接手填，也可以点开下拉列表选（列表来自服务商，输入时按名字筛选） */
+function ModelPicker({ value, onChange, options, heading }: { value: string; onChange: (v: string) => void; options: string[]; heading: string }) {
+  const [open, setOpen] = useState(false)
+  const [hi, setHi] = useState(-1)
+  const box = useRef<HTMLDivElement>(null)
+  const shown = useMemo(() => {
+    const q = value.trim().toLowerCase()
+    // 输入框里正好是列表里的一个：说明是选好了的，打开时还是显示全部
+    if (!q || options.includes(value)) return options
+    return options.filter((o) => o.toLowerCase().includes(q))
+  }, [value, options])
+  useEffect(() => {
+    if (!open) return
+    const off = (e: MouseEvent): void => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', off)
+    // 列表在窗口下半部分时，滚一下让它完整出现在眼前
+    const t = setTimeout(() => box.current?.querySelector('.mp-list')?.scrollIntoView({ block: 'nearest' }), 30)
+    return () => {
+      document.removeEventListener('mousedown', off)
+      clearTimeout(t)
+    }
+  }, [open])
+  const pick = (m: string): void => {
+    onChange(m)
+    setOpen(false)
+    setHi(-1)
+  }
+  return (
+    <div className="model-picker" ref={box}>
+      <div className="mp-field">
+        <input
+          value={value}
+          onChange={(e) => {
+            onChange(e.target.value.trim())
+            setOpen(true)
+            setHi(-1)
+          }}
+          onFocus={() => options.length && setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown') {
+              e.preventDefault()
+              setOpen(true)
+              setHi((h) => Math.min(shown.length - 1, h + 1))
+            } else if (e.key === 'ArrowUp') {
+              e.preventDefault()
+              setHi((h) => Math.max(0, h - 1))
+            } else if (e.key === 'Enter' && open && hi >= 0 && shown[hi]) {
+              e.preventDefault()
+              pick(shown[hi])
+            } else if (e.key === 'Escape' && open) {
+              e.preventDefault()
+              e.stopPropagation()
+              setOpen(false)
+            }
+          }}
+          placeholder="选一个，或者直接填模型名"
+          aria-label="模型"
+          spellCheck={false}
+          autoComplete="off"
+        />
+        <button type="button" className={`mp-arrow ${open ? 'open' : ''}`} onClick={() => setOpen((o) => !o)} aria-label="展开模型列表" title="展开模型列表" disabled={!options.length}>
+          <Icon name="chevron" size={16} />
+        </button>
+      </div>
+      {open && options.length > 0 && (
+        <ul className="mp-list" role="listbox">
+          <li className="mp-head">{heading}</li>
+          {shown.length === 0 && <li className="mp-none">列表里没有叫这个名字的，会直接用你填的</li>}
+          {shown.map((m, i) => (
+            <li key={m} role="option" aria-selected={m === value} className={`${m === value ? 'on' : ''} ${i === hi ? 'hi' : ''}`} onMouseDown={(e) => e.preventDefault()} onClick={() => pick(m)}>
+              {m}
+              {m === value && <Icon name="check" size={14} />}
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
+  )
+}
+
+type ModelState = { state: 'idle' | 'loading' | 'ok' | 'error'; list: string[]; suggested: string; text: string }
+
+/**
+ * 服务商、接口地址、密钥、模型放在一起：密钥保存后自动向服务商要最新的模型列表，
+ * 所以服务商出了新模型，这里马上就能选，不用等 Bluebird 更新。密钥按服务商分开保存，只对它自己的接口地址有效
+ */
+function AiConnect({ ai, setAi, notify, confirm }: { ai: Settings['ai']; setAi: (p: Partial<Settings['ai']>) => void; notify: (msg: string, kind?: 'ok' | 'error') => void; confirm: Props['confirm'] }) {
+  const preset = presetOf(ai.preset)
+  const host = aiHost(ai.baseUrl)
   const [info, setInfo] = useState<{ hasKey: boolean; tail: string } | null>(null)
   const [value, setValue] = useState('')
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ ok: boolean; text: string } | null>(null)
+  const [models, setModels] = useState<ModelState>({ state: 'idle', list: [], suggested: '', text: '' })
+  const [notice, setNotice] = useState('')
+  const run = useRef(0)
+  const aiRef = useRef(ai)
+  aiRef.current = ai
+  const setAiRef = useRef(setAi)
+  setAiRef.current = setAi
+  // 离开「其他」时记下自己填的地址和模型，切回来不用重填
+  const lastCustom = useRef<{ baseUrl: string; style: Settings['ai']['style']; model: string } | null>(null)
+
+  // 换了服务商或地址：重新看这个服务商有没有填过密钥
   useEffect(() => {
+    setInfo(null)
+    setResult(null)
+    setValue('')
+    if (!host) return
+    let live = true
     api
-      .aiInfo()
-      .then(setInfo)
-      .catch(() => undefined)
-  }, [])
+      .aiInfo(aiRef.current)
+      .then((i) => live && setInfo(i))
+      .catch(() => live && setInfo({ hasKey: false, tail: '' }))
+    return () => {
+      live = false
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [host])
+
+  const fetchModels = (): void => {
+    const id = ++run.current
+    setModels((m) => ({ ...m, state: 'loading', text: '' }))
+    api
+      .aiModels(aiRef.current)
+      .then((r) => {
+        if (id !== run.current) return
+        setModels({ state: 'ok', list: r.models, suggested: r.suggested, text: '' })
+        const cur = aiRef.current.model
+        // 没选、或者是以前预设里带的老名字（服务商这边已经没有了）：自动换成服务商现有的
+        if (r.suggested && r.models.length && !r.models.includes(cur) && isPresetModel(cur)) {
+          setAiRef.current({ model: r.suggested })
+          setNotice(cur ? `「${cur}」服务商已经没有了，自动换成了「${r.suggested}」` : `已经替你选了「${r.suggested}」，不合适可以换`)
+        }
+      })
+      .catch((err) => id === run.current && setModels({ state: 'error', list: [], suggested: '', text: (err as Error).message }))
+  }
+
+  // 有密钥、地址也对：自动获取模型列表（地址改动时稍等一下，免得每敲一个字就去问一次）
+  useEffect(() => {
+    run.current++
+    setNotice('')
+    if (!info?.hasKey || !host) {
+      setModels({ state: 'idle', list: [], suggested: '', text: '' })
+      return
+    }
+    const t = setTimeout(fetchModels, 500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [info?.hasKey, info?.tail, host, ai.style])
+
   const save = async (key: string): Promise<void> => {
     setBusy(true)
     setResult(null)
@@ -994,7 +1085,8 @@ function AiKeyRow({ ai, notify, confirm }: { ai: Settings['ai']; notify: (msg: s
       const i = await api.aiSetKey(key, ai)
       setInfo(i)
       setValue('')
-      notify(i.hasKey ? '密钥可以用，已经保存' : '密钥已删除')
+      if (i.note) setResult({ ok: false, text: i.note })
+      else notify(i.hasKey ? '密钥可以用，已经保存' : '密钥已删除')
     } catch (err) {
       setResult({ ok: false, text: (err as Error).message })
     } finally {
@@ -1013,55 +1105,115 @@ function AiKeyRow({ ai, notify, confirm }: { ai: Settings['ai']; notify: (msg: s
       setBusy(false)
     }
   }
-  const keyUrl = presetOf(ai.preset).keyUrl
+
+  const custom = ai.preset === 'custom'
+  const label = (p: (typeof AI_PRESETS)[number]): string => (p.id === 'custom' && ai.customName ? `其他：${ai.customName}` : p.label)
+  const fetched = models.state === 'ok' && models.list.length > 0
+  const options = fetched ? models.list : preset.models
+  const missing = fetched && !!ai.model && !models.list.includes(ai.model)
+  const urlOk = /^https:\/\//i.test(ai.baseUrl) || /^http:\/\/(localhost|127\.0\.0\.1|\[::1\])/i.test(ai.baseUrl)
+
   return (
-    <div className="set-block">
-      <div className="set-title">API 密钥</div>
-      <div className="set-hint">
-        {info?.hasKey ? `已经填好了（末四位 ${info.tail}）。` : '还没有填。'}
-        密钥只保存在这台电脑上，用 Windows 系统加密，只在你点 AI 按钮时用来向你选的服务商证明身份。请自己粘贴在下面，不要发给别人。
-        {keyUrl && (
-          <button className="link-btn" onClick={() => void api.openExternal(keyUrl)}>
-            去申请密钥
+    <>
+      <Row title="服务商" hint="用你自己的账号和密钥直接连，不经过 Bluebird 的任何服务器。国内的服务不用代理，Claude 和 OpenAI 需要开着代理">
+        <select
+          value={ai.preset}
+          onChange={(e) => {
+            const p = presetOf(e.target.value)
+            if (ai.preset === 'custom') lastCustom.current = { baseUrl: ai.baseUrl, style: ai.style, model: ai.model }
+            // 换服务商：地址、接口类型、默认模型一起换；选「其他」时地址留给自己填（回来时恢复上次填的）
+            setAi(p.id === 'custom' ? { preset: p.id, baseUrl: lastCustom.current?.baseUrl ?? '', style: lastCustom.current?.style ?? 'openai', model: lastCustom.current?.model ?? '' } : { preset: p.id, style: p.style, baseUrl: p.baseUrl, model: p.models[0] ?? '' })
+          }}
+        >
+          {AI_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {label(p)}
+            </option>
+          ))}
+        </select>
+      </Row>
+      {custom && (
+        <>
+          <Row title="名称" hint="给这个服务商起个名字，方便认，比如「公司内网模型」「OpenRouter」。只用来显示">
+            <input className="wide-input" value={ai.customName} maxLength={40} onChange={(e) => setAi({ customName: e.target.value })} placeholder="比如：OpenRouter" aria-label="服务商名称" />
+          </Row>
+          <Row title="接口类型" hint="绝大多数服务（包括自己电脑上跑的 Ollama、LM Studio 等）都选「兼容 OpenAI」">
+            <select value={ai.style} onChange={(e) => setAi({ style: e.target.value === 'anthropic' ? 'anthropic' : 'openai' })}>
+              <option value="openai">兼容 OpenAI</option>
+              <option value="anthropic">Claude 官方格式</option>
+            </select>
+          </Row>
+        </>
+      )}
+      <Row title="接口地址" hint={custom ? '服务商文档里的 Base URL，一般以 /v1 结尾，必须是 https://（本机的可以用 http://localhost）。填好后再填密钥，模型列表会自动出来' : '选了服务商会自动填好，一般不用改'}>
+        <input className="wide-input" value={ai.baseUrl} onChange={(e) => setAi({ baseUrl: e.target.value.trim() })} placeholder="https://api.example.com/v1" aria-label="接口地址" spellCheck={false} />
+      </Row>
+      {ai.baseUrl && !urlOk && <p className="form-error">接口地址必须以 https:// 开头（本机的可以用 http://localhost）</p>}
+
+      <div className="set-block">
+        <div className="set-title">API 密钥{host ? <span className="set-sub">（只对 {host} 有效）</span> : null}</div>
+        <div className="set-hint">
+          {info?.hasKey ? `已经填好了（末四位 ${info.tail}）。` : '还没有填。'}
+          每个服务商各填各的，换来换去不用重填。密钥只保存在这台电脑上，用 Windows 系统加密，只在你点 AI 按钮时用来向这个服务商证明身份。请自己粘贴在下面，不要发给别人。
+          {preset.keyUrl && (
+            <button className="link-btn" onClick={() => void api.openExternal(preset.keyUrl)}>
+              去申请密钥
+            </button>
+          )}
+        </div>
+        <form
+          className="addr-add"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (value.trim()) void save(value.trim())
+          }}
+        >
+          <input type="password" value={value} onChange={(e) => setValue(e.target.value)} placeholder={info?.hasKey ? '要换一个密钥就填在这里' : '把密钥粘贴到这里'} autoComplete="off" aria-label="AI 密钥" disabled={!urlOk} />
+          <button type="submit" className="primary-btn" disabled={busy || !value.trim() || !urlOk}>
+            {busy ? '正在检查…' : '保存密钥'}
           </button>
+          {info?.hasKey && (
+            <>
+              <button type="button" className="ghost-btn bordered" disabled={busy || !ai.model} title={ai.model ? '' : '先选好模型'} onClick={() => void test()}>
+                测试连接
+              </button>
+              <button type="button" className="ghost-btn" disabled={busy} onClick={() => confirm({ title: '删除这个服务商的密钥？', message: `删除后就不能用 ${host} 的 AI 了，以后可以再填。别的服务商的密钥不受影响。`, confirmLabel: '删除', onConfirm: () => void save('') })}>
+                删除
+              </button>
+            </>
+          )}
+        </form>
+        {result && <p className={result.ok ? 'test-ok' : 'form-error'}>{result.text}</p>}
+      </div>
+
+      <div className="set-block">
+        <div className="set-title">模型</div>
+        <div className="set-hint">
+          {info?.hasKey ? '下面是服务商现在提供的模型，新出的也在里面，点右边的小箭头选。' : '保存密钥后，会自动向服务商要最新的模型列表。没有密钥时也可以先手填。'}
+          写邮件和总结用主力型号里便宜快的就够（Flash、Plus、Sonnet、Mini 这类），不必选最大最贵的。
+        </div>
+        <div className="mp-row">
+          <ModelPicker value={ai.model} onChange={(model) => setAi({ model })} options={options} heading={fetched ? `服务商提供的模型（${models.list.length} 个，新的在前）` : '常用参考（可能不是最新，保存密钥后会换成服务商的真实列表）'} />
+          <button type="button" className="ghost-btn bordered" onClick={fetchModels} disabled={!info?.hasKey || models.state === 'loading' || !urlOk} title="重新向服务商获取模型列表">
+            <Icon name="refresh" size={15} />
+            {models.state === 'loading' ? '获取中…' : '刷新'}
+          </button>
+        </div>
+        {models.state === 'ok' && !models.list.length && <p className="set-hint">服务商没有返回可用的模型，请直接填模型名。</p>}
+        {models.state === 'error' && <p className="form-error">{models.text}。也可以直接手填模型名。</p>}
+        {notice && <p className="test-ok">{notice}</p>}
+        {missing && (
+          <p className="form-error">
+            服务商的模型列表里没有「{ai.model}」，可能已经下线。
+            {models.suggested && (
+              <button className="link-btn" onClick={() => setAi({ model: models.suggested })}>
+                改用 {models.suggested}
+              </button>
+            )}
+          </p>
         )}
       </div>
-      <form
-        className="addr-add"
-        onSubmit={(e) => {
-          e.preventDefault()
-          if (value.trim()) void save(value.trim())
-        }}
-      >
-        <input
-          type="password"
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder={info?.hasKey ? '要换一个密钥就填在这里' : '把密钥粘贴到这里'}
-          autoComplete="off"
-          aria-label="AI 密钥"
-        />
-        <button type="submit" className="primary-btn" disabled={busy || !value.trim()}>
-          {busy ? '正在检查…' : '保存密钥'}
-        </button>
-        {info?.hasKey && (
-          <>
-            <button type="button" className="ghost-btn bordered" disabled={busy} onClick={() => void test()}>
-              测试连接
-            </button>
-            <button
-              type="button"
-              className="ghost-btn"
-              disabled={busy}
-              onClick={() => confirm({ title: '删除 AI 密钥？', message: '删除后就不能用 AI 总结和写作了，以后可以再填。', confirmLabel: '删除', onConfirm: () => void save('') })}
-            >
-              删除
-            </button>
-          </>
-        )}
-      </form>
-      {result && <p className={result.ok ? 'test-ok' : 'form-error'}>{result.text}</p>}
-    </div>
+    </>
   )
 }
 
