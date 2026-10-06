@@ -4365,3 +4365,49 @@ kbd {
 .set-block .set-hint .link-btn {
   margin-left: 6px;
 }
+
+/* ---------- 新版本提示 ---------- */
+
+.update-banner {
+  position: fixed;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 13.5px;
+  box-shadow: 0 10px 30px rgba(47, 115, 246, 0.4);
+}
+.update-banner .update-go {
+  padding: 6px 14px;
+  border-radius: 9px;
+  background: #fff;
+  color: var(--accent);
+  font-weight: 700;
+}
+.update-banner .update-later {
+  padding: 6px 10px;
+  border-radius: 9px;
+  color: inherit;
+  opacity: 0.85;
+}
+.update-banner .update-later:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.16);
+}
+.rail-dot {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--danger);
+  box-shadow: 0 0 0 2px var(--bg, #fff);
+}

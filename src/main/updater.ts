@@ -12,7 +12,11 @@ let notify: (s: UpdateStatus) => void = () => undefined
 let checking = false
 let started = false
 
+let lastCheck = 0
+
 function set(next: UpdateStatus): void {
+  // 状态变化写进日志（下载进度不写），自动更新没动静时能从日志里看出卡在哪
+  if (next.state !== status.state) console.warn('[更新] 状态：' + next.state + (next.version ? ` ${next.version}` : '') + (next.error ? ` ——${next.error}` : ''))
   status = next
   try {
     notify(status)
@@ -58,16 +62,23 @@ export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
   // 已经下载好、等着安装的，不用再查
   if (checking || status.state === 'downloading' || status.state === 'ready') return status
   checking = true
+  lastCheck = Date.now()
   set({ state: 'checking' })
   try {
     await applyProxy()
     await autoUpdater.checkForUpdates()
   } catch (err) {
+    console.warn('[更新] 检查失败：' + String((err as Error)?.message || err).split('\n')[0])
     set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
   } finally {
     checking = false
   }
   return status
+}
+
+/** 窗口被切回来时：离上次检查超过半小时就再查一次（程序常年开着，光靠定时器容易错过） */
+export function checkIfStale(): void {
+  if (Date.now() - lastCheck > 30 * 60 * 1000) void checkForUpdate()
 }
 
 /** 退出程序并装上已经下载好的新版本，装完自动重新打开 */
@@ -100,10 +111,11 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
   })
   autoUpdater.on('update-downloaded', (info: { version: string }) => set({ state: 'ready', version: info.version }))
   autoUpdater.on('error', (err: Error) => {
+    console.warn('[更新] 出错：' + String(err?.message || err).split('\n')[0])
     // 已经下载好了的话，后面再报什么错都不影响安装
     if (status.state !== 'ready') set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
   })
-  // 打开程序半分钟后查一次，之后每 4 小时查一次
-  setTimeout(() => void checkForUpdate(), 30000)
-  setInterval(() => void checkForUpdate(), 4 * 3600 * 1000)
+  // 打开程序 10 秒后查一次，之后每小时查一次；切回窗口时离上次超过半小时也会查
+  setTimeout(() => void checkForUpdate(), 10000)
+  setInterval(() => void checkForUpdate(), 3600 * 1000)
 }

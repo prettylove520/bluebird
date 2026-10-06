@@ -230,6 +230,13 @@ export default function App() {
   const listReq = useRef(0)
   const detailReq = useRef(0)
   const pendingOpen = useRef<MsgRef | null>(null)
+  // 新版本下载好了：顶上一直挂着提示，直到点了「重启并更新」或「以后再说」（以后再说只管这一次开着程序的时候）
+  const [updateReady, setUpdateReady] = useState<string | null>(null)
+  const [updateLater, setUpdateLater] = useState('')
+  useEffect(() => {
+    // 界面还没准备好的时候就下载好了的，也要看得到
+    api.updateStatus().then((st) => setUpdateReady(st.state === 'ready' ? (st.version ?? '新版本') : null)).catch(() => undefined)
+  }, [])
   const remoteAllowed = useRef(false)
   const searchRef = useRef<HTMLInputElement>(null)
   const changeTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
@@ -2559,11 +2566,7 @@ export default function App() {
       api.onDataChanged(setData),
       api.onSendDone((e) => handlers.current.onSendDone(e)),
       // 新版本下载好了：底部提示一下，点了就重启安装；不点也行，下次退出程序时会自动装上
-      api.onUpdateStatus((st) => {
-        if (st.state !== 'ready') return
-        const id = Date.now() + Math.random()
-        setToasts((t) => [...t.filter((x) => x.kind !== 'update'), { id, kind: 'update', text: `新版本 ${st.version ?? ''} 已经准备好` }])
-      })
+      api.onUpdateStatus((st) => setUpdateReady(st.state === 'ready' ? (st.version ?? '新版本') : null))
     ]
     const onKey = (e: KeyboardEvent): void => handlers.current.onKey(e)
     window.addEventListener('keydown', onKey)
@@ -2897,8 +2900,24 @@ export default function App() {
         onMore={() => setDrawer((v) => !v)}
         onScheduled={() => setShowScheduled(true)}
         onSettings={() => setDialog({ kind: 'settings' })}
+        updateReady={!!updateReady}
         onAccountMenu={openAccountSwitcher}
       />
+
+      {updateReady && updateLater !== updateReady && (
+        <div className="update-banner" role="alert">
+          <Icon name="refresh" size={16} />
+          <span>
+            新版本 <strong>{updateReady}</strong> 已经下载好了
+          </span>
+          <button className="update-go" onClick={() => api.updateInstall().catch((err) => notify((err as Error).message, 'error'))}>
+            重启并更新
+          </button>
+          <button className="update-later" onClick={() => setUpdateLater(updateReady)}>
+            以后再说
+          </button>
+        </div>
+      )}
 
       {drawer && (
         <div className="drawer-backdrop" onMouseDown={(e) => e.target === e.currentTarget && setDrawer(false)}>

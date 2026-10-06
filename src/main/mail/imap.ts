@@ -69,6 +69,49 @@ function closeQuietly(client: ImapFlow): void {
 
 const conns = new Map<string, Conn>()
 
+// 每条连接的忙闲：busy 是正在做的事的数量，last 是最后一次用完的时间。保活只在闲了一阵子之后才去敲一下
+const activity = new WeakMap<ImapFlow, { busy: number; last: number }>()
+function track(client: ImapFlow): () => void {
+  const a = activity.get(client) ?? { busy: 0, last: Date.now() }
+  activity.set(client, a)
+  a.busy++
+  return () => {
+    a.busy = Math.max(0, a.busy - 1)
+    a.last = Date.now()
+  }
+}
+
+/**
+ * 保活：连接闲了一分钟以上，就发个 NOOP 问一声。
+ * 经过代理的连接闲久了常被代理或服务器悄悄断掉，下次要用时才发现，得先等它超时再重连，邮件就会卡很久；
+ * 提前敲一下，断了的在后台就重连好，用的时候已经是通的。8 秒没回应就当它已经断了。
+ */
+function keepAlive(account: Account, client: ImapFlow, lane: Lane): void {
+  const timer = setInterval(() => {
+    const a = activity.get(client) ?? { busy: 0, last: Date.now() }
+    activity.set(client, a)
+    if (!client.usable || a.busy > 0 || Date.now() - a.last < 55000) return
+    a.busy++
+    const dead = setTimeout(() => {
+      console.warn(`[保活] ${account.email}（${lane}）连接没有回应，已断开，下次用时重连`)
+      try {
+        client.close()
+      } catch {
+        // 已经断了
+      }
+    }, 8000)
+    client
+      .noop()
+      .catch(() => undefined)
+      .finally(() => {
+        clearTimeout(dead)
+        a.busy = Math.max(0, a.busy - 1)
+        a.last = Date.now()
+      })
+  }, 30000)
+  client.on('close', () => clearInterval(timer))
+}
+
 /**
  * 每个账号有两条操作连接：
  * main 给「用户正等着」的事用——打开邮件、标记、移动、发信后的收尾；
@@ -122,6 +165,7 @@ export async function getClient(account: Account, lane: Lane = 'main'): Promise<
         throw Object.assign(new Error('连接已被重置'), { code: 'NoConnection' })
       }
       conn.client = client
+      keepAlive(account, client, lane)
       client.on('close', () => {
         if (conn.client === client) conn.client = undefined
       })
@@ -185,6 +229,7 @@ export async function withMailbox<T>(
       if (attempt === 0 && (err as { code?: string })?.code === 'NoConnection') continue
       throw new Error(friendlyError(err, { host: account.imap.host, useProxy: account.useProxy, oauth: account.auth.type === 'oauth2' ? account.auth.oauthProvider : undefined }))
     }
+    const done = track(client)
     try {
       const lock = await client.getMailboxLock(path)
       try {
@@ -199,6 +244,8 @@ export async function withMailbox<T>(
         continue
       }
       throw new Error(friendlyError(err, { host: account.imap.host, useProxy: account.useProxy, oauth: account.auth.type === 'oauth2' ? account.auth.oauthProvider : undefined }))
+    } finally {
+      done()
     }
   }
 }
@@ -214,6 +261,7 @@ export async function withClient<T>(account: Account, fn: (client: ImapFlow) => 
       if (attempt === 0 && (err as { code?: string })?.code === 'NoConnection') continue
       throw new Error(friendlyError(err, { host: account.imap.host, useProxy: account.useProxy, oauth: account.auth.type === 'oauth2' ? account.auth.oauthProvider : undefined }))
     }
+    const done = track(client)
     try {
       return await fn(client)
     } catch (err) {
@@ -222,6 +270,8 @@ export async function withClient<T>(account: Account, fn: (client: ImapFlow) => 
         continue
       }
       throw new Error(friendlyError(err, { host: account.imap.host, useProxy: account.useProxy, oauth: account.auth.type === 'oauth2' ? account.auth.oauthProvider : undefined }))
+    } finally {
+      done()
     }
   }
 }

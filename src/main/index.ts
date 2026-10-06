@@ -42,7 +42,7 @@ import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, get
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
-import { checkForUpdate, initUpdater, installUpdate, updateStatus } from './updater'
+import { checkForUpdate, checkIfStale, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
 import { ICON_PNG_BASE64 } from './icon'
 import { dropClient, startWatcher, stopAll, stopWatcher } from './mail/imap'
@@ -225,7 +225,10 @@ function createWindow(): void {
       win?.hide()
     }
   })
-  win.on('focus', () => win?.flashFrame(false))
+  win.on('focus', () => {
+    win?.flashFrame(false)
+    checkIfStale()
+  })
   win.on('closed', () => {
     win = null
     // 主窗口关了，另开的附件预览窗口也跟着关
@@ -560,7 +563,8 @@ function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Pro
     } finally {
       // 哪一步慢了记到日志里，以后查「为什么卡」有据可依（只记是哪种操作和用时，不记内容）
       const ms = Date.now() - started
-      if (ms > 3000) console.warn(`[慢] ${channel} 用了 ${(ms / 1000).toFixed(1)} 秒`)
+      // 打开邮件是用户直接等着的，1.2 秒就记；其余的 3 秒才记
+      if (ms > (channel === 'mail:get' ? 1200 : 3000)) console.warn(`[慢] ${channel} 用了 ${(ms / 1000).toFixed(1)} 秒`)
     }
   })
 }
@@ -1309,7 +1313,17 @@ app.whenReady().then(() => {
   // 清掉以前「打开附件」「打印」留下的临时文件
   void rm(join(app.getPath('temp'), 'bluebird'), { recursive: true, force: true }).catch(() => undefined)
   registerIpc()
-  initUpdater((s) => send('update:status', s))
+  let notifiedVersion = ''
+  initUpdater((s) => {
+    send('update:status', s)
+    // 新版本下载好了：窗口没在前面（缩在托盘里、被别的窗口盖住）时，用系统通知提醒一次
+    if (s.state === 'ready' && s.version && s.version !== notifiedVersion) {
+      notifiedVersion = s.version
+      if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
+        showNote({ title: 'Bluebird 有新版本', body: `${s.version} 已经下载好，点这里打开程序，再点「重启并更新」`, silent: true }, () => showWindow())
+      }
+    }
+  })
   applySettings()
   createWindow()
   watchAll()

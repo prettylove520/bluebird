@@ -18,6 +18,8 @@ interface Props {
   onMore: () => void
   onScheduled: () => void
   onSettings: () => void
+  /** 有下载好的新版本：设置按钮上挂一个红点 */
+  updateReady?: boolean
   /** 点左下角的账号圆标：弹出账号列表 */
   onAccountMenu: (x: number, y: number) => void
 }
@@ -65,8 +67,9 @@ export function Rail(props: Props) {
         </button>
       </div>
       <div className="rail-foot">
-        <button className="rail-btn" onClick={props.onSettings} title="设置" aria-label="设置">
+        <button className="rail-btn" onClick={props.onSettings} title={props.updateReady ? '设置（有新版本）' : '设置'} aria-label="设置">
           <Icon name="sliders" size={22} />
+          {props.updateReady && <span className="rail-dot" />}
         </button>
         {props.account && (
           <button
