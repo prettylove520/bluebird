@@ -542,11 +542,16 @@ function applySettings(): void {
 
 function handle<A extends unknown[], R>(channel: string, fn: (...args: A) => Promise<R> | R): void {
   ipcMain.handle(channel, async (_e, ...args): Promise<Result<R>> => {
+    const started = Date.now()
     try {
       return { ok: true, data: await fn(...(args as A)) }
     } catch (err) {
       console.error(`[${channel}]`, err)
       return { ok: false, error: (err as Error)?.message || String(err) }
+    } finally {
+      // 哪一步慢了记到日志里，以后查「为什么卡」有据可依（只记是哪种操作和用时，不记内容）
+      const ms = Date.now() - started
+      if (ms > 3000) console.warn(`[慢] ${channel} 用了 ${(ms / 1000).toFixed(1)} 秒`)
     }
   })
 }

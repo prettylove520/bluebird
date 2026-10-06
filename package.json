@@ -1,7 +1,7 @@
 {
   "name": "bluebird-mail",
   "productName": "Bluebird",
-  "version": "0.5.2",
+  "version": "0.5.3",
   "description": "Windows 桌面邮件客户端（支持 QQ/163/Gmail/Outlook 等）",
   "main": "./out/main/index.js",
   "author": "Bluebird",

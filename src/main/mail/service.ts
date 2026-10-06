@@ -12,7 +12,7 @@ import type {
   MessageSummary,
   SpecialUse
 } from '../../shared/types'
-import { withClient, withMailbox } from './imap'
+import { dropBackground, withClient, withMailbox, type Lane } from './imap'
 import { classify, CLASSIFY_HEADERS, parseHeaders } from './classify'
 import { noteContacts } from '../contacts'
 import { getData } from '../userdata'
@@ -231,7 +231,7 @@ export async function listByUids(account: Account, path: string, uids: number[])
 /**
  * 取一页邮件。before 是上一页里最小的序号，不传则取最新一页。
  */
-export async function listMessages(account: Account, path: string, before?: number): Promise<MessagePage> {
+export async function listMessages(account: Account, path: string, before?: number, lane: Lane = 'main'): Promise<MessagePage> {
   return withMailbox(account, path, async (client) => {
     const mb = client.mailbox
     const exists = mb ? mb.exists : 0
@@ -272,7 +272,7 @@ function harvestContacts(account: Account, path: string, messages: MessageSummar
 export async function warmContacts(account: Account): Promise<void> {
   const folders = folderCache.get(account.id) ?? (await listFolders(account))
   const sent = folders.find((f) => f.specialUse === 'sent')
-  if (sent) await listMessages(account, sent.path)
+  if (sent) await listMessages(account, sent.path, undefined, 'bg')
 }
 
 /**
@@ -296,7 +296,8 @@ export async function searchEverywhere(account: Account, query: string): Promise
   let ok = 0
   for (const f of targets) {
     try {
-      const page = await searchMessages(account, f.path, q)
+      // 要一个文件夹一个文件夹地搜，比较慢：走后台那条连接，搜索期间照样能打开邮件
+      const page = await searchMessages(account, f.path, q, 'bg')
       // 每个文件夹最多取最近的 40 封，免得一个大文件夹把结果占满
       for (const m of page.messages.slice(0, 40)) {
         // 同一封信在几个文件夹里各有一份时只列一次
@@ -320,7 +321,7 @@ export async function searchEverywhere(account: Account, query: string): Promise
   return { messages: top, total: top.length, hasMore: false }
 }
 
-export async function searchMessages(account: Account, path: string, query: string): Promise<MessagePage> {
+export async function searchMessages(account: Account, path: string, query: string, lane: Lane = 'main'): Promise<MessagePage> {
   const q = query.trim()
   if (!q) return listMessages(account, path)
   return withMailbox(account, path, async (client) => {
@@ -341,24 +342,66 @@ export async function searchMessages(account: Account, path: string, query: stri
  * 找出「已发送」里属于某个会话的邮件：也就是你回复这几封邮件时发出去的信。
  * ids 是会话里各封邮件的 Message-ID，最早的排在前面。
  */
+// 有的邮箱按邮件头搜索特别慢（要把整个「已发送」翻一遍），甚至干脆不支持。
+// 慢过一次、失败过一次的账号，接下来半小时不再去找，免得白白占着连接
+const sentLookupOff = new Map<string, number>()
+const SENT_LOOKUP_LIMIT = 10000
+
 export async function findSentReplies(account: Account, ids: string[]): Promise<MessageSummary[]> {
   const clean = [...new Set((ids || []).filter((id) => typeof id === 'string' && /^<[^<>\s]{3,300}>$/.test(id)))]
   if (!clean.length) return []
+  if ((sentLookupOff.get(account.id) ?? 0) > Date.now()) return []
   const sent = await findSpecial(account, 'sent')
   if (!sent) return []
   // 一次问的条件不能太多：第一封（话题的起点）加上最近的十来封
   const asked = clean.length > 12 ? [clean[0], ...clean.slice(-11)] : clean
-  return withMailbox(account, sent, async (client) => {
-    const or: Record<string, unknown>[] = asked.map((id) => ({ header: { 'in-reply-to': id } }))
-    or.push({ header: { references: asked[0] } })
-    const uids = (await client.search(or.length > 1 ? { or } : or[0], { uid: true })) || []
-    const latest = uids.sort((a, b) => b - a).slice(0, 30)
-    if (!latest.length) return []
-    const found = await collect(client, account, sent, latest, true)
-    // 服务器是按「包含这段文字」来找的，这里再严格核对一遍
-    const want = new Set(clean)
-    return found.filter((m) => m.refs?.some((r) => want.has(r)))
+  const pause = (): void => void sentLookupOff.set(account.id, Date.now() + 30 * 60 * 1000)
+  let started = Date.now()
+  let timer: NodeJS.Timeout | undefined
+  let reject: (err: Error) => void = () => undefined
+  const giveUp = new Promise<never>((_, r) => {
+    reject = r
   })
+  // 从真正开始找的那一刻算时间（前面排队等连接的时间不算）。等太久就不等了：
+  // 把后台那条连接断掉（让服务器别再找了），这个账号先歇半小时
+  const arm = (): void => {
+    clearTimeout(timer)
+    started = Date.now()
+    timer = setTimeout(() => {
+      pause()
+      dropBackground(account.id)
+      reject(new Error('在「已发送」里找回复用的时间太长，先不找了'))
+    }, SENT_LOOKUP_LIMIT)
+  }
+  const work = withMailbox(
+    account,
+    sent,
+    async (client) => {
+      arm()
+      const or: Record<string, unknown>[] = asked.map((id) => ({ header: { 'in-reply-to': id } }))
+      or.push({ header: { references: asked[0] } })
+      const uids = (await client.search(or.length > 1 ? { or } : or[0], { uid: true })) || []
+      const latest = uids.sort((a, b) => b - a).slice(0, 30)
+      if (!latest.length) return []
+      const found = await collect(client, account, sent, latest, true)
+      // 服务器是按「包含这段文字」来找的，这里再严格核对一遍
+      const want = new Set(clean)
+      return found.filter((m) => m.refs?.some((r) => want.has(r)))
+    },
+    'bg'
+  )
+  try {
+    const list = await Promise.race([work, giveUp])
+    if (Date.now() - started > 5000) pause()
+    return list
+  } catch (err) {
+    pause()
+    // 上面超时以后，原来那次查找迟早会报错，接住它，别让它变成没人管的报错
+    work.catch(() => undefined)
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 // ---------------- 文件夹管理 ----------------
@@ -518,13 +561,19 @@ export async function getPreviews(account: Account, folder: string, uids: number
   }
   if (!missing.length) return out
 
-  const raws = await withMailbox(account, folder, async (client) => {
-    const list: { uid: number; source: Buffer }[] = []
-    for await (const m of client.fetch(missing, { uid: true, source: { maxLength: 32768 } }, { uid: true })) {
-      if (m.source) list.push({ uid: m.uid, source: m.source })
-    }
-    return list
-  })
+  // 摘要是后台慢慢补的，走后台那条连接：一口气要取几十上百封的开头，不能挡着用户打开邮件
+  const raws = await withMailbox(
+    account,
+    folder,
+    async (client) => {
+      const list: { uid: number; source: Buffer }[] = []
+      for await (const m of client.fetch(missing, { uid: true, source: { maxLength: 32768 } }, { uid: true })) {
+        if (m.source) list.push({ uid: m.uid, source: m.source })
+      }
+      return list
+    },
+    'bg'
+  )
 
   for (const r of raws) {
     let snippet = ''

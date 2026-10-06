@@ -68,6 +68,15 @@ function closeQuietly(client: ImapFlow): void {
 
 const conns = new Map<string, Conn>()
 
+/**
+ * 每个账号有两条操作连接：
+ * main 给「用户正等着」的事用——打开邮件、标记、移动、发信后的收尾；
+ * bg 给后台慢慢做的事用——列表里的摘要、全局搜索、找会话里自己的回复。
+ * 分开以后，后台的事再慢也不会让打开邮件排队等着。
+ */
+export type Lane = 'main' | 'bg'
+const connKey = (accountId: string, lane: Lane): string => (lane === 'bg' ? `${accountId}#bg` : accountId)
+
 async function openClient(account: Account): Promise<ImapFlow> {
   const make = async (): Promise<ImapFlow> => {
     const client = new ImapFlow(await buildImapOptions(account))
@@ -88,11 +97,12 @@ async function openClient(account: Account): Promise<ImapFlow> {
   }
 }
 
-export async function getClient(account: Account): Promise<ImapFlow> {
-  let c = conns.get(account.id)
+export async function getClient(account: Account, lane: Lane = 'main'): Promise<ImapFlow> {
+  const key = connKey(account.id, lane)
+  let c = conns.get(key)
   if (!c) {
     c = { gen: 0 }
-    conns.set(account.id, c)
+    conns.set(key, c)
   }
   if (c.client?.usable) return c.client
   if (c.connecting) return c.connecting
@@ -125,15 +135,29 @@ export async function getClient(account: Account): Promise<ImapFlow> {
  * 先失败的已经重连好了，后失败的不能把这条新连接又关掉。
  */
 export function dropClient(accountId: string, only?: ImapFlow): void {
-  const c = conns.get(accountId)
-  if (!c) return
-  if (only) {
-    if (c.client === only) c.client = undefined
-    if (only.usable) closeQuietly(only)
-    return
+  // 两条连接（main 和 bg）都看一遍；accountId 本身已经带着 #bg 时只会对上它自己那一条
+  for (const key of [accountId, connKey(accountId, 'bg')]) {
+    const c = conns.get(key)
+    if (!c) continue
+    if (only) {
+      if (c.client === only) c.client = undefined
+      continue
+    }
+    c.gen++
+    // 正在连的那一条已经作废，后面的请求不要再搭它的车
+    c.connecting = undefined
+    const client = c.client
+    c.client = undefined
+    if (client) closeQuietly(client)
   }
+  if (only?.usable) closeQuietly(only)
+}
+
+/** 只断开后台那条连接（后台的事卡住了、不想再等的时候用） */
+export function dropBackground(accountId: string): void {
+  const c = conns.get(connKey(accountId, 'bg'))
+  if (!c) return
   c.gen++
-  // 正在连的那一条已经作废，后面的请求不要再搭它的车
   c.connecting = undefined
   const client = c.client
   c.client = undefined
@@ -144,12 +168,13 @@ export function dropClient(accountId: string, only?: ImapFlow): void {
 export async function withMailbox<T>(
   account: Account,
   path: string,
-  fn: (client: ImapFlow) => Promise<T>
+  fn: (client: ImapFlow) => Promise<T>,
+  lane: Lane = 'main'
 ): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     let client: ImapFlow
     try {
-      client = await getClient(account)
+      client = await getClient(account, lane)
     } catch (err) {
       // 正在连的时候连接被重置了，重新连一次
       if (attempt === 0 && (err as { code?: string })?.code === 'NoConnection') continue
