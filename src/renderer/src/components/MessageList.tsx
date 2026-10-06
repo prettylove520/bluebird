@@ -36,6 +36,9 @@ interface Props {
   selectedKey: string | null
   /** 勾选（多选）的邮件 */
   checked: Set<string>
+  /** 多选模式：点一封就是勾选或取消这一封（不用按 Ctrl） */
+  multi: boolean
+  onToggleMulti: () => void
   loading: boolean
   loadingMore: boolean
   error: string | null
@@ -282,7 +285,7 @@ const RENDER_STEP = 200
 export function MessageList(props: Props) {
   const { messages, selectedKey, checked } = props
   const listRef = useRef<HTMLDivElement>(null)
-  const selecting = checked.size > 0
+  const selecting = checked.size > 0 || props.multi
   // 每一行用到的操作：始终转给最新的 props，自己的引用不变，行才能被缓存
   const latest = useRef(props)
   latest.current = props
@@ -292,7 +295,7 @@ export function MessageList(props: Props) {
         const p = latest.current
         if (e.shiftKey) p.onCheck(m, true)
         // 已经在多选了：点一下就是勾选或取消这一封，而不是打开它
-        else if (e.ctrlKey || e.metaKey || p.checked.size > 0) p.onCheck(m, false)
+        else if (e.ctrlKey || e.metaKey || p.multi || p.checked.size > 0) p.onCheck(m, false)
         else p.onSelect(m)
       },
       hover: (m) => latest.current.onHover?.(m),
@@ -409,6 +412,16 @@ export function MessageList(props: Props) {
               <Icon name="mailOpen" size={20} />
             </button>
           )}
+          <button
+            className={`head-btn no-drag ${props.multi ? 'on' : ''}`}
+            onClick={props.onToggleMulti}
+            title={props.multi ? '退出多选' : '多选：点哪封选哪封'}
+            aria-label="多选"
+            aria-pressed={props.multi}
+            disabled={!messages.length && !props.multi}
+          >
+            <Icon name="checkAll" size={20} />
+          </button>
           <button className="head-btn no-drag" onClick={props.onCheckAll} title="全选（Ctrl+A）" aria-label="全选" disabled={!messages.length}>
             <Icon name="checkCircle" size={20} />
           </button>
@@ -436,36 +449,36 @@ export function MessageList(props: Props) {
         <div className="batch-bar" role="toolbar" aria-label="批量操作">
           <label className="batch-count" title={allChecked ? '取消全选' : '全选'}>
             <input type="checkbox" checked={allChecked} onChange={() => (allChecked ? props.onClearChecked() : props.onCheckAll())} />
-            已选 {checked.size} 封
+            {checked.size ? `已选 ${checked.size} 封` : '点邮件来选择'}
           </label>
           <span className="batch-actions">
-            <button onClick={batch('read')} title="标为已读" aria-label="标为已读">
+            <button disabled={!checked.size} onClick={batch('read')} title="标为已读" aria-label="标为已读">
               <Icon name="mailOpen" size={19} />
             </button>
-            <button onClick={batch('unread')} title="标为未读" aria-label="标为未读">
+            <button disabled={!checked.size} onClick={batch('unread')} title="标为未读" aria-label="标为未读">
               <Icon name="unread" size={19} />
             </button>
-            <button onClick={batch('flag')} title="加星标 / 取消星标" aria-label="星标">
+            <button disabled={!checked.size} onClick={batch('flag')} title="加星标 / 取消星标" aria-label="星标">
               <Icon name="star" size={19} />
             </button>
             {props.canBatchArchive && (
-              <button onClick={batch('archive')} title="归档" aria-label="归档">
+              <button disabled={!checked.size} onClick={batch('archive')} title="归档" aria-label="归档">
                 <Icon name="archive" size={19} />
               </button>
             )}
             {props.canBatchMove && (
-              <button onClick={batch('move')} title="移动到文件夹" aria-label="移动到文件夹">
+              <button disabled={!checked.size} onClick={batch('move')} title="移动到文件夹" aria-label="移动到文件夹">
                 <Icon name="move" size={19} />
               </button>
             )}
-            <button className="danger" onClick={batch('delete')} title="删除（Delete）" aria-label="删除">
+            <button className="danger" disabled={!checked.size} onClick={batch('delete')} title="删除（Delete）" aria-label="删除">
               <Icon name="trash" size={19} />
             </button>
-            <button className="batch-more" onClick={props.onActions} title="全部操作（Ctrl+K）">
+            <button className="batch-more" disabled={!checked.size} onClick={props.onActions} title="全部操作（Ctrl+K）">
               <Icon name="bolt" size={17} />
               操作
             </button>
-            <button className="batch-done" onClick={props.onClearChecked} title="退出多选（Esc）">
+            <button className="batch-done" onClick={props.multi ? props.onToggleMulti : props.onClearChecked} title="退出多选（Esc）">
               完成
             </button>
           </span>
@@ -524,7 +537,7 @@ export function MessageList(props: Props) {
       )}
 
       {/* 聚焦列表里点开「通知」「订阅」之后：顶上给一条返回 */}
-      {props.tabs && props.tab !== 'focus' && !selecting && (
+      {props.tabs && props.tab !== 'focus' && checked.size === 0 && (
         <div className="cat-bar">
           <button className="cat-back" onClick={() => props.onTab('focus')} title="回到聚焦列表（Esc）">
             <Icon name="back" size={16} />
@@ -549,7 +562,7 @@ export function MessageList(props: Props) {
         onClick={(e) => {
           // 多选时点一下列表的空白处就退出多选
           // 只认真正点在空白处；点分组标题、「加载更早的邮件」这些不算
-          if (selecting && e.target === e.currentTarget) props.onClearChecked()
+          if (selecting && !props.multi && e.target === e.currentTarget) props.onClearChecked()
         }}
         onContextMenu={(e) => {
           // 点在邮件上时由邮件自己的菜单处理，这里只管空白处

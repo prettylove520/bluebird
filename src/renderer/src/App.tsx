@@ -195,6 +195,8 @@ export default function App() {
   const [menu, setMenu] = useState<MenuState | null>(null)
   const [confirm, setConfirm] = useState<ConfirmState | null>(null)
   const lastChecked = useRef<string | null>(null)
+  /** 多选模式：点邮件就是勾选 */
+  const [multi, setMulti] = useState(false)
   const [data, setData] = useState<UserData>(EMPTY_DATA)
   const [tab, setTab] = useState<CategoryTab>('focus')
   const [home, setHome] = useState(false)
@@ -731,6 +733,7 @@ export default function App() {
     setMessages([])
     setHasMore(false)
     setChecked(new Set())
+    setMulti(false)
     lastChecked.current = null
     setFreshKeys((f) => (f.size ? new Set() : f))
     setExtras(null)
@@ -2599,8 +2602,10 @@ export default function App() {
         moveSelection(-1)
         break
       case 'Escape':
-        if (checked.size && !readingNow) clearChecked()
-        else if (drawer) setDrawer(false)
+        if ((checked.size || multi) && !readingNow) {
+          clearChecked()
+          setMulti(false)
+        } else if (drawer) setDrawer(false)
         else if (settings?.general.layout !== 'split' && selectedKey) closeReader()
         // 在「通知」「订阅」里按 Esc 回到聚焦列表
         else if (smartInbox && tab !== 'focus') {
@@ -3134,6 +3139,11 @@ export default function App() {
             snoozed={data.snoozed}
             selectedKey={selectedHeadKey}
             checked={checked}
+            multi={multi}
+            onToggleMulti={() => {
+              if (multi) clearChecked()
+              setMulti(!multi)
+            }}
             showPreview={settings.reading.showPreview}
             compact={look.reading.density === 'compact'}
             wide={wide}
@@ -3396,6 +3406,7 @@ export default function App() {
           confirm={setConfirm}
           onOpen={openDraft}
           onDelete={discardDraft}
+          onDeleteMany={(ids) => saveData({ drafts: dataRef.current.drafts.filter((x) => !ids.includes(x.id)) })}
           onOpenServerDrafts={() => {
             setShowDrafts(false)
             const id = activeAccountId()

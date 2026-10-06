@@ -4869,3 +4869,10 @@ kbd {
 .contact-addr { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink-3, #888); font-size: 12.5px; }
 .contact-del { flex: none; border: 0; background: transparent; color: var(--ink-3, #888); font-size: 18px; cursor: pointer; border-radius: 6px; width: 26px; height: 26px; }
 .contact-del:hover { background: rgba(224, 60, 60, .12); color: #d33; }
+
+/* 多选模式打开时，列表右上角的「多选」按钮亮着 */
+.head-btn.on { background: var(--accent-soft, rgba(79, 140, 255, 0.16)); color: var(--accent); }
+.draft-bar { display: flex; align-items: center; gap: 14px; margin: 0 0 8px; }
+.draft-bar .link-btn:disabled { opacity: .4; cursor: default; }
+.draft-check { flex: none; margin: 0 4px 0 0; width: 16px; height: 16px; }
+.sched-item.picked { background: var(--select, rgba(79, 140, 255, 0.12)); }
