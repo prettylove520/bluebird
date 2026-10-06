@@ -96,7 +96,8 @@ let crashReset: NodeJS.Timeout | undefined
 const liveNotes = new Set<Notification>()
 function showNote(options: { title: string; body?: string; silent?: boolean }, onClick?: () => void): void {
   if (!Notification.isSupported()) return
-  const note = new Notification(options)
+  // 所有系统通知的声音统一跟「设置 → 通知 → 通知声音」走，不再有的响、有的不响
+  const note = new Notification({ ...options, silent: !getSettings().notify.sound })
   liveNotes.add(note)
   const done = (): void => {
     liveNotes.delete(note)
