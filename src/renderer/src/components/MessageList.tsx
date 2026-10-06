@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { MailCategory, MessageSummary, SnoozeInfo } from '../../../shared/types'
 import { avatarColor, avatarText, dateGroup, displayName, friendlyTime, shortDate } from '../utils'
 import { Icon, type IconName } from './Icon'
@@ -100,6 +100,180 @@ interface Props {
   searchRef: React.RefObject<HTMLInputElement | null>
 }
 
+/** 一行邮件要用的操作；用 ref 转一道，这样回调变了也不用重画每一行 */
+interface RowHandlers {
+  select: (m: MessageSummary, e: React.MouseEvent) => void
+  hover: (m: MessageSummary | null) => void
+  context: (m: MessageSummary, x: number, y: number) => void
+  check: (m: MessageSummary, range: boolean) => void
+  action: (m: MessageSummary, a: RowAction, anchor: { x: number; y: number }) => void
+}
+
+interface RowProps {
+  m: MessageSummary
+  k: string
+  /** 这一行上面要显示的日期分组标题；不显示就是空 */
+  groupLabel: string
+  name: string
+  avatarSeed: string
+  avatarLabel: string
+  vip: boolean
+  threadCount: number
+  unread: boolean
+  flagged: boolean
+  answered: boolean
+  attachments: boolean
+  isPinned: boolean
+  snoozeUntil: number
+  folderTag?: string
+  /** 「所有收件箱」里这封邮件属于哪个邮箱的小标签（没有就是空） */
+  acctLabel: string
+  acctColor: string
+  acctEmail: string
+  preview?: string
+  showPreview: boolean
+  selected: boolean
+  isChecked: boolean
+  selecting: boolean
+  canArchive: boolean
+  h: RowHandlers
+}
+
+/**
+ * 列表里的一行。单独做成缓存组件：往下翻页、勾选别的邮件时，没变的行不用重画；
+ * 行尾的六个小按钮只在鼠标停上来（或选中）时才生成，一行少一半的页面元素。
+ */
+const MsgRow = memo(function MsgRow(r: RowProps) {
+  const { m, h } = r
+  const [hot, setHot] = useState(false)
+  const showActions = !r.selecting && (hot || r.selected)
+  return (
+    <Fragment>
+      {r.groupLabel && <div className="group-label">{r.groupLabel}</div>}
+      <div
+        data-key={r.k}
+        role="option"
+        tabIndex={r.selected ? 0 : -1}
+        aria-selected={r.selected || r.isChecked}
+        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''}`}
+        onClick={(e) => h.select(m, e)}
+        onMouseEnter={() => {
+          setHot(true)
+          h.hover(m)
+        }}
+        onMouseLeave={() => {
+          setHot(false)
+          h.hover(null)
+        }}
+        onContextMenu={(e) => {
+          e.preventDefault()
+          h.context(m, e.clientX, e.clientY)
+        }}
+      >
+        <span className="unread-dot" aria-hidden="true" />
+        <span
+          className="avatar-slot"
+          title={r.isChecked ? '取消选择' : '选择'}
+          onClick={(e) => {
+            e.stopPropagation()
+            h.check(m, e.shiftKey)
+          }}
+        >
+          <span className="avatar" style={{ background: avatarColor(r.avatarSeed) }}>
+            {r.avatarLabel}
+          </span>
+          <span className={`check-mark ${r.isChecked ? 'on' : ''}`} role="checkbox" aria-checked={r.isChecked} aria-label="选择这封邮件">
+            {r.isChecked && <Icon name="check" size={16} />}
+          </span>
+        </span>
+        <span className="msg-main">
+          <span className="msg-row">
+            <span className={`msg-from ${r.vip ? 'vip' : ''}`} title={r.vip ? '重要发件人' : undefined}>
+              <span className="from-text">{r.name}</span>
+              {r.threadCount > 0 && (
+                <span className="thread-count" title={`这个会话里有 ${r.threadCount} 封邮件`}>
+                  {r.threadCount}
+                </span>
+              )}
+            </span>
+            <span className="msg-meta">
+              {r.isPinned && (
+                <span className="mark-pin" title="已置顶">
+                  <Icon name="pin" size={12} filled />
+                </span>
+              )}
+              {r.flagged && (
+                <span className="mark-star" title="已加星标">
+                  <Icon name="star" size={12} filled />
+                </span>
+              )}
+              {r.folderTag && <span className="folder-tag">{r.folderTag}</span>}
+              {r.attachments && (
+                <span className="mark" title="有附件">
+                  <Icon name="clip" size={12} />
+                </span>
+              )}
+              {r.acctLabel && (
+                <span className="acct-tag" style={{ ['--c' as string]: r.acctColor }} title={`${r.acctEmail} 收到的`}>
+                  <i style={{ background: r.acctColor }} />
+                  {r.acctLabel}
+                </span>
+              )}
+              {r.snoozeUntil ? (
+                <span className="msg-date snooze" title="到这个时间会回到收件箱">
+                  <Icon name="clock" size={11} /> {friendlyTime(r.snoozeUntil)}
+                </span>
+              ) : (
+                <span className="msg-date">{shortDate(m.date)}</span>
+              )}
+            </span>
+          </span>
+          <span className="msg-subject">
+            {r.answered && (
+              <span className="mark" title="已回复">
+                <Icon name="reply" size={12} />
+              </span>
+            )}
+            <span className="subject-text">{m.subject || '（无主题）'}</span>
+          </span>
+          {r.showPreview && <span className="msg-preview">{r.preview === undefined ? ' ' : r.preview || '（没有文字内容）'}</span>}
+        </span>
+
+        {showActions && (
+          <span className="row-actions" onClick={(e) => e.stopPropagation()}>
+            {(
+              [
+                r.canArchive && ['archive', '归档', 'archive', ''],
+                ['seen', r.unread ? '标为已读' : '标为未读', r.unread ? 'mailOpen' : 'unread', ''],
+                ['flag', r.flagged ? '取消星标' : '加星标', 'star', r.flagged ? 'on' : ''],
+                ['pin', r.isPinned ? '取消置顶' : '置顶', 'pin', r.isPinned ? 'on' : ''],
+                ['snooze', r.snoozeUntil ? '取消推迟' : '稍后处理', 'clock', ''],
+                ['delete', '删除', 'trash', 'danger']
+              ] as (false | [RowAction, string, IconName, string])[]
+            ).map(
+              (it) =>
+                it && (
+                  <button
+                    key={it[0]}
+                    className={it[3]}
+                    title={it[1]}
+                    aria-label={it[1]}
+                    onClick={(e) => {
+                      const b = e.currentTarget.getBoundingClientRect()
+                      h.action(m, it[0], { x: b.left, y: b.bottom + 4 })
+                    }}
+                  >
+                    <Icon name={it[2]} size={18} filled={it[0] === 'flag' && r.flagged} />
+                  </button>
+                )
+            )}
+          </span>
+        )}
+      </div>
+    </Fragment>
+  )
+})
+
 // 列表一次最多先画这么多行
 const RENDER_STEP = 200
 
@@ -107,6 +281,25 @@ export function MessageList(props: Props) {
   const { messages, selectedKey, checked } = props
   const listRef = useRef<HTMLDivElement>(null)
   const selecting = checked.size > 0
+  // 每一行用到的操作：始终转给最新的 props，自己的引用不变，行才能被缓存
+  const latest = useRef(props)
+  latest.current = props
+  const rowHandlers = useMemo<RowHandlers>(
+    () => ({
+      select: (m, e) => {
+        const p = latest.current
+        if (e.shiftKey) p.onCheck(m, true)
+        // 已经在多选了：点一下就是勾选或取消这一封，而不是打开它
+        else if (e.ctrlKey || e.metaKey || p.checked.size > 0) p.onCheck(m, false)
+        else p.onSelect(m)
+      },
+      hover: (m) => latest.current.onHover?.(m),
+      context: (m, x, y) => latest.current.onContextMenu(m, x, y),
+      check: (m, range) => latest.current.onCheck(m, range),
+      action: (m, a, anchor) => latest.current.onAction(m, a, anchor)
+    }),
+    []
+  )
 
   // 列表很长时不一次全画出来：先画前面一批，滚到底再接着画，几千封邮件也不会卡
   const [limit, setLimit] = useState(RENDER_STEP)
@@ -450,142 +643,39 @@ export function MessageList(props: Props) {
                 ? `${thread.names[0]} … ${thread.names.slice(-2).join('、')}`
                 : thread.names.join('、')
               : single
-          const unread = thread ? thread.unread : !m.seen
-          const flagged = thread ? thread.flagged : m.flagged
           const isPinned = props.pinned.has(k)
-          const snooze = props.snoozed[k]
-          const vip = !!who && props.priority.has(who.address.toLowerCase())
           const group = props.searchActive ? '' : isPinned ? '已置顶' : dateGroup(m.date)
           const showGroup = group !== lastGroup
           lastGroup = group
-          const preview = props.previews[k]
-          const selected = selectedKey === k
-          const isChecked = checked.has(k)
           return (
-            <Fragment key={k}>
-              {showGroup && group && <div className="group-label">{group}</div>}
-              <div
-                data-key={k}
-                role="option"
-                tabIndex={selected ? 0 : -1}
-                aria-selected={selected || isChecked}
-                className={`msg ${unread ? 'unread' : ''} ${selected ? 'selected' : ''} ${isChecked ? 'checked' : ''}`}
-                onClick={(e) => {
-                  if (e.shiftKey) props.onCheck(m, true)
-                  // 已经在多选了：点一下就是勾选或取消这一封，而不是打开它
-                  else if (e.ctrlKey || e.metaKey || selecting) props.onCheck(m, false)
-                  else props.onSelect(m)
-                }}
-                onMouseEnter={() => props.onHover?.(m)}
-                onMouseLeave={() => props.onHover?.(null)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  props.onContextMenu(m, e.clientX, e.clientY)
-                }}
-              >
-                <span className="unread-dot" aria-hidden="true" />
-                <span
-                  className="avatar-slot"
-                  title={isChecked ? '取消选择' : '选择'}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    props.onCheck(m, e.shiftKey)
-                  }}
-                >
-                  <span className="avatar" style={{ background: avatarColor(who?.address || single) }}>
-                    {avatarText(who)}
-                  </span>
-                  <span className={`check-mark ${isChecked ? 'on' : ''}`} role="checkbox" aria-checked={isChecked} aria-label="选择这封邮件">
-                    {isChecked && <Icon name="check" size={16} />}
-                  </span>
-                </span>
-                <span className="msg-main">
-                  <span className="msg-row">
-                    <span className={`msg-from ${vip ? 'vip' : ''}`} title={vip ? '重要发件人' : undefined}>
-                      <span className="from-text">{name}</span>
-                      {thread && (
-                        <span className="thread-count" title={`这个会话里有 ${thread.count} 封邮件`}>
-                          {thread.count}
-                        </span>
-                      )}
-                    </span>
-                    <span className="msg-meta">
-                      {isPinned && (
-                        <span className="mark-pin" title="已置顶">
-                          <Icon name="pin" size={12} filled />
-                        </span>
-                      )}
-                      {flagged && (
-                        <span className="mark-star" title="已加星标">
-                          <Icon name="star" size={12} filled />
-                        </span>
-                      )}
-                      {props.folderLabel && <span className="folder-tag">{props.folderLabel(m)}</span>}
-                      {(thread ? thread.attachments : m.hasAttachments) && (
-                        <span className="mark" title="有附件">
-                          <Icon name="clip" size={12} />
-                        </span>
-                      )}
-                      {props.accountMarks?.[m.accountId] && (
-                        <span className="acct-tag" style={{ ['--c' as string]: props.accountMarks[m.accountId].color }} title={`${props.accountMarks[m.accountId].email} 收到的`}>
-                          <i style={{ background: props.accountMarks[m.accountId].color }} />
-                          {props.accountMarks[m.accountId].label}
-                        </span>
-                      )}
-                      {snooze ? (
-                        <span className="msg-date snooze" title="到这个时间会回到收件箱">
-                          <Icon name="clock" size={11} /> {friendlyTime(snooze.until)}
-                        </span>
-                      ) : (
-                        <span className="msg-date">{shortDate(m.date)}</span>
-                      )}
-                    </span>
-                  </span>
-                  <span className="msg-subject">
-                    {(thread ? thread.answered : m.answered) && (
-                      <span className="mark" title="已回复">
-                        <Icon name="reply" size={12} />
-                      </span>
-                    )}
-                    <span className="subject-text">{m.subject || '（无主题）'}</span>
-                  </span>
-                  {props.showPreview && (
-                    <span className="msg-preview">{preview === undefined ? ' ' : preview || '（没有文字内容）'}</span>
-                  )}
-                </span>
-
-                {!selecting && (
-                  <span className="row-actions" onClick={(e) => e.stopPropagation()}>
-                    {(
-                      [
-                        props.canArchive(m) && ['archive', '归档', 'archive', ''],
-                        ['seen', unread ? '标为已读' : '标为未读', unread ? 'mailOpen' : 'unread', ''],
-                        ['flag', flagged ? '取消星标' : '加星标', 'star', flagged ? 'on' : ''],
-                        ['pin', isPinned ? '取消置顶' : '置顶', 'pin', isPinned ? 'on' : ''],
-                        ['snooze', snooze ? '取消推迟' : '稍后处理', 'clock', ''],
-                        ['delete', '删除', 'trash', 'danger']
-                      ] as (false | [RowAction, string, IconName, string])[]
-                    ).map(
-                      (it) =>
-                        it && (
-                          <button
-                            key={it[0]}
-                            className={it[3]}
-                            title={it[1]}
-                            aria-label={it[1]}
-                            onClick={(e) => {
-                              const r = e.currentTarget.getBoundingClientRect()
-                              props.onAction(m, it[0], { x: r.left, y: r.bottom + 4 })
-                            }}
-                          >
-                            <Icon name={it[2]} size={18} filled={it[0] === 'flag' && flagged} />
-                          </button>
-                        )
-                    )}
-                  </span>
-                )}
-              </div>
-            </Fragment>
+            <MsgRow
+              key={k}
+              m={m}
+              k={k}
+              groupLabel={showGroup ? group : ''}
+              name={name}
+              avatarSeed={who?.address || single}
+              avatarLabel={avatarText(who)}
+              vip={!!who && props.priority.has(who.address.toLowerCase())}
+              threadCount={thread ? thread.count : 0}
+              unread={thread ? thread.unread : !m.seen}
+              flagged={thread ? thread.flagged : m.flagged}
+              answered={thread ? thread.answered : m.answered}
+              attachments={thread ? thread.attachments : m.hasAttachments}
+              isPinned={isPinned}
+              snoozeUntil={props.snoozed[k]?.until ?? 0}
+              folderTag={props.folderLabel ? props.folderLabel(m) : undefined}
+              acctLabel={props.accountMarks?.[m.accountId]?.label ?? ''}
+              acctColor={props.accountMarks?.[m.accountId]?.color ?? ''}
+              acctEmail={props.accountMarks?.[m.accountId]?.email ?? ''}
+              preview={props.previews[k]}
+              showPreview={props.showPreview}
+              selected={selectedKey === k}
+              isChecked={checked.has(k)}
+              selecting={selecting}
+              canArchive={props.canArchive(m)}
+              h={rowHandlers}
+            />
           )
         })}
 

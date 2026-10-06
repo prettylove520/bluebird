@@ -4849,3 +4849,12 @@ kbd {
   margin-top: 4px;
   flex-wrap: wrap;
 }
+
+/* 长列表：屏幕外的邮件行不参与布局和绘制（几千行也流畅） */
+.msg {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 74px;
+}
+.list-pane.compact .msg {
+  contain-intrinsic-size: auto 52px;
+}
