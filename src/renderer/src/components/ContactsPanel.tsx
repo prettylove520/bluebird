@@ -47,7 +47,7 @@ export function ContactsPanel(props: { notify: (msg: string, kind?: 'ok' | 'erro
   return (
     <div>
       <div className="set-hint" style={{ marginBottom: 12 }}>
-        你发过信的人会自动记在这里，写信时输入几个字（名字或邮箱的一部分都行）就会提示，回车或点一下填入。
+        你发过信的人会自动记在这里，写信时输入几个字（名字、邮箱的一部分、拼音都行，比如「zhang」「zjg」都能找到「张建国」）就会提示，回车或点一下填入。
         只存在这台电脑上。删掉的人不会再被自动收集回来。
       </div>
       <div className="contact-tools">

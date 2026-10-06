@@ -6,6 +6,7 @@ import { app } from 'electron'
 import { join } from 'path'
 import type { Contact } from '../shared/types'
 import { readJsonSafe, writeJsonSafe } from './jsonfile'
+import { pinyinKeys, type PinyinKeys } from './pinyin'
 
 interface Entry {
   name: string
@@ -88,17 +89,45 @@ export function noteContacts(list: { name?: string; address?: string }[], kind: 
   if (changed) saveSoon()
 }
 
-/** 按输入的几个字找联系人：名字或地址里包含就算，开头匹配的排前面 */
+// 名字的拼音关键字（按需算，同一个名字只算一次）
+const pyCache = new Map<string, PinyinKeys | null>()
+function keysOf(name: string): PinyinKeys | null {
+  if (!name) return null
+  let k = pyCache.get(name)
+  if (k === undefined) {
+    k = pinyinKeys(name)
+    if (pyCache.size > 8000) pyCache.clear()
+    pyCache.set(name, k)
+  }
+  return k
+}
+
+/** 按输入的几个字找联系人：名字、地址里包含就算，也认拼音（全拼的姓、首字母），开头匹配的排前面 */
 export function searchContacts(query: string, limit = 8): Contact[] {
   const q = String(query || '').trim().toLowerCase()
   if (!q) return []
+  const letters = /^[a-z]{1,20}$/.test(q)
   const b = load()
   const hits: { c: Contact; rank: number }[] = []
   for (const [address, e] of Object.entries(b)) {
-    const name = e.name.toLowerCase()
-    const starts = address.startsWith(q) || name.startsWith(q)
     if (e.removed) continue
-    if (!starts && !address.includes(q) && !name.includes(q)) continue
+    const name = e.name.toLowerCase()
+    let starts = address.startsWith(q) || name.startsWith(q)
+    let found = starts || address.includes(q) || name.includes(q)
+    let py = 0
+    if (!found && letters) {
+      const k = keysOf(e.name)
+      if (k) {
+        // 拼音：开头对上（zhang、zjg、zhangjg）排前面；只打两个字母以上时，中间对上也算
+        if (k.mixed.startsWith(q) || k.initials.startsWith(q)) py = 2
+        else if (q.length >= 2 && (k.mixed.includes(q) || k.initials.includes(q))) py = 1
+      }
+      if (py) {
+        found = true
+        starts = py === 2
+      }
+    }
+    if (!found) continue
     hits.push({ c: { name: e.name, address }, rank: (starts ? 1000 : 0) + (e.sent ? 500 : 0) + Math.min(e.score, 400) + Math.min(e.last / 1e11, 20) })
   }
   return hits
