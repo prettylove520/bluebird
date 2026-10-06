@@ -948,6 +948,10 @@ function registerIpc(): void {
     if (!before) putCachedList(accountId, folder, page)
     return page
   })
+  // 手动点刷新：把这几个邮箱的连接断开重连，服务器那边改了设置（比如 163 的「收取全部邮件」）才会生效
+  handle('mail:reconnect', (ids: string[]) => {
+    for (const id of Array.isArray(ids) ? ids : []) dropClient(String(id))
+  })
   handle('cache:list', (accountId: string, folder: string) => getCachedList(accountId, folder) ?? null)
   handle('cache:info', () => cacheSize())
   handle('cache:clear', () => {

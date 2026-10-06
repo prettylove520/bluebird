@@ -91,6 +91,7 @@ export const api = {
   cachedList: (accountId: string, folder: string) => call<MessagePage | null>('cachedList', accountId, folder),
   cacheInfo: () => call<number>('cacheInfo'),
   cacheClear: () => call<number>('cacheClear'),
+  reconnect: (ids: string[]) => call<void>('reconnect', ids),
   listByUids: (accountId: string, folder: string, uids: number[]) =>
     call<MessageSummary[]>('listByUids', accountId, folder, uids),
   updateData: (patch: Partial<UserData>) => call<UserData>('updateData', patch),

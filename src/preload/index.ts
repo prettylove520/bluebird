@@ -35,6 +35,7 @@ const api = {
   cachedList: invoke('cache:list'),
   cacheInfo: invoke('cache:info'),
   cacheClear: invoke('cache:clear'),
+  reconnect: invoke('mail:reconnect'),
   updateData: invoke('data:update'),
   scheduleAdd: invoke('schedule:add'),
   runRules: invoke('rules:run'),

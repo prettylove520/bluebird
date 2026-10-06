@@ -3175,7 +3175,17 @@ export default function App() {
             onHover={hoverRow}
             onAction={onRowAction}
             onLoadMore={(auto) => void loadMore(auto)}
-            onRefresh={() => refreshView()}
+            onRefresh={() => {
+              // 手动刷新：先断开重连，邮箱服务器那边改过的设置才会生效
+              const ids = view && !isVirtual(view.accountId) ? (view.accountId === ALL ? accounts.map((a) => a.id) : [view.accountId]) : []
+              void api
+                .reconnect(ids)
+                .catch(() => undefined)
+                .finally(() => {
+                  refreshView()
+                  notify('正在重新连接并刷新…')
+                })
+            }}
           />
           <Reader
             detail={shownDetail}
