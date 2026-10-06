@@ -24,7 +24,8 @@ jobs:
         with:
           node-version: 22
 
-      # 这个版本号已经发布过就不再打包（只改了说明文字之类的推送不用重复发布）
+      # 这个版本号已经完整发布过就不再打包（只改了说明文字之类的推送不用重复发布）。
+      # 「完整」指发布里有 latest.yml：程序靠它知道有新版本，没有它就等于没发布
       - name: 看看这个版本发布过没有
         id: ver
         shell: bash
@@ -33,24 +34,50 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "exists=true" >> "$GITHUB_OUTPUT"
+          if gh release view "v$VERSION" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' 2>/dev/null | grep -qx 'latest.yml'; then
+            echo "done=true" >> "$GITHUB_OUTPUT"
             echo "v$VERSION 已经发布过了，这次不用打包"
           else
-            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "done=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: 安装依赖
-        if: steps.ver.outputs.exists == 'false'
+        if: steps.ver.outputs.done == 'false'
         run: npm install --no-fund --no-audit
 
       - name: 编译
-        if: steps.ver.outputs.exists == 'false'
+        if: steps.ver.outputs.done == 'false'
         run: npx electron-vite build
 
-      - name: 打包并发布
-        if: steps.ver.outputs.exists == 'false'
+      # 只打包、不让打包工具自己去发布；失败时把日志最后一段作为错误提示贴出来，方便查原因
+      - name: 打包
+        if: steps.ver.outputs.done == 'false'
+        shell: bash
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npx electron-builder --win --publish always
+        run: |
+          set -o pipefail
+          if ! npx electron-builder --win --publish never 2>&1 | tee build.log; then
+            msg=$(tail -n 40 build.log | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            echo "::error title=打包失败::$msg"
+            exit 1
+          fi
+          ls -la dist
+
+      - name: 发布
+        if: steps.ver.outputs.done == 'false'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="v${{ steps.ver.outputs.version }}"
+          FILES=(dist/Bluebird-Setup-*.exe dist/Bluebird-Setup-*.exe.blockmap dist/latest.yml)
+          ls -la "${FILES[@]}"
+          cat dist/latest.yml
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" "${FILES[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          else
+            gh release create "$TAG" "${FILES[@]}" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+              --title "Bluebird ${{ steps.ver.outputs.version }}" \
+              --notes "下载下面的 Bluebird-Setup-${{ steps.ver.outputs.version }}.exe 安装。已经装过的会自动更新，不用手动下载。"
+          fi

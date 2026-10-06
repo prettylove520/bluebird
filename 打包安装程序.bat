@@ -36,9 +36,9 @@ if exist "dist" rmdir /s /q "dist"
 if exist "dist" goto distlocked
 call npm run dist:win > build.log 2>&1
 if errorlevel 1 goto buildfail
-if not exist "dist\Bluebird Setup *.exe" goto buildfail
+if not exist "dist\Bluebird-Setup-*.exe" goto buildfail
 
-echo  打包完成。安装程序是 dist 文件夹里的「Bluebird Setup 版本号.exe」，马上为你打开。
+echo  打包完成。安装程序是 dist 文件夹里的「Bluebird-Setup-版本号.exe」，马上为你打开。
 echo  安装前请先关闭正在运行的 Bluebird（包括那个黑色窗口）。
 start "" explorer "%cd%\dist"
 pause

@@ -14,6 +14,8 @@ win:
       arch: [x64]
   icon: build/icon.ico
 nsis:
+  # 文件名里不带空格：GitHub 会把空格改成别的符号，那样自动更新就找不到安装包了
+  artifactName: Bluebird-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
