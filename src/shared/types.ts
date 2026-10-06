@@ -206,8 +206,11 @@ export interface UserData {
 
 /** 自动更新进行到哪一步了 */
 export interface UpdateStatus {
-  /** unsupported：不是安装版，不参与更新；latest：已经是最新；ready：新版本下载好了，等重启安装 */
-  state: 'unsupported' | 'idle' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error'
+  /**
+   * unsupported：不是安装版，不参与更新；latest：已经是最新；
+   * available：发现了新版本，等用户决定要不要下载；downloading：用户点了下载，正在下；ready：下载好了，等用户决定要不要马上重启安装
+   */
+  state: 'unsupported' | 'idle' | 'checking' | 'latest' | 'available' | 'downloading' | 'ready' | 'error'
   /** 新版本的版本号 */
   version?: string
   /** 下载进度，0 到 100 */

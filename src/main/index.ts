@@ -42,7 +42,7 @@ import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, get
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
-import { checkForUpdate, checkIfStale, initUpdater, installUpdate, updateStatus } from './updater'
+import { checkForUpdate, checkIfStale, downloadUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
 import { ICON_PNG_BASE64 } from './icon'
 import { dropClient, startWatcher, stopAll, stopWatcher } from './mail/imap'
@@ -1182,6 +1182,7 @@ function registerIpc(): void {
   handle('translate:texts', (texts: string[], xml: boolean) => translateTexts(texts, !!xml))
   handle('update:status', () => updateStatus())
   handle('update:check', () => checkForUpdate(true))
+  handle('update:download', () => downloadUpdate())
   handle('update:install', () => {
     if (inflight.size > 0 || getData().scheduled.some((x) => x.undo)) throw new Error('有邮件正在发送，等它发完再更新')
     // 这是真的要退出了：不能被「关闭时留在托盘」拦下来
@@ -1316,11 +1317,18 @@ app.whenReady().then(() => {
   let notifiedVersion = ''
   initUpdater((s) => {
     send('update:status', s)
-    // 新版本下载好了：窗口没在前面（缩在托盘里、被别的窗口盖住）时，用系统通知提醒一次
-    if (s.state === 'ready' && s.version && s.version !== notifiedVersion) {
-      notifiedVersion = s.version
+    // 发现新版本、或者下载好了：窗口没在前面（缩在托盘里、被别的窗口盖住）时，用系统通知提醒一次
+    if ((s.state === 'available' || s.state === 'ready') && s.version && `${s.state}${s.version}` !== notifiedVersion) {
+      notifiedVersion = `${s.state}${s.version}`
       if (!win || win.isDestroyed() || !win.isVisible() || !win.isFocused()) {
-        showNote({ title: 'Bluebird 有新版本', body: `${s.version} 已经下载好，点这里打开程序，再点「重启并更新」`, silent: true }, () => showWindow())
+        showNote(
+          {
+            title: s.state === 'available' ? 'Bluebird 发现新版本' : 'Bluebird 新版本已下载好',
+            body: s.state === 'available' ? `${s.version} 可以更新了，点这里打开程序，再决定要不要下载` : `${s.version} 已经下载好，点这里打开程序，再点「重启并更新」`,
+            silent: true
+          },
+          () => showWindow()
+        )
       }
     }
   })

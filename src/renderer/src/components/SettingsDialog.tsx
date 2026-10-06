@@ -367,8 +367,8 @@ export function SettingsDialog(props: Props) {
                 >
                   <Switch label="开机自动启动" checked={general.launchAtLogin} onChange={(launchAtLogin) => setGeneral({ launchAtLogin })} />
                 </Row>
-                <Row title="自动更新" hint="有新版本时在后台悄悄下载，下载好了提示你重启；不重启的话，下次退出程序时也会自动装上。更新要连 GitHub，在国内一般需要开着代理">
-                  <Switch label="自动更新" checked={general.autoUpdate !== false} onChange={(autoUpdate) => setGeneral({ autoUpdate })} />
+                <Row title="自动检查更新" hint="定时检查有没有新版本，有的话先提醒你，由你决定要不要下载；下载好以后再问你要不要马上重启安装。更新要连 GitHub，在国内一般需要开着代理">
+                  <Switch label="自动检查更新" checked={general.autoUpdate !== false} onChange={(autoUpdate) => setGeneral({ autoUpdate })} />
                 </Row>
                 <Row title="恢复全部默认设置" hint="把通用、外观、通知、阅读、写信这几页全部换回刚装好时的样子。邮箱账号、代理地址、浏览器登录的 Client ID、模板和发件人名单都不会动">
                   <button className="ghost-btn bordered" onClick={restoreAll} disabled={!defaults}>
@@ -988,11 +988,13 @@ function UpdateRow({ notify }: { notify: (msg: string, kind?: 'ok' | 'error') =>
   if (!st) return null
   const hint =
     st.state === 'unsupported'
-      ? '现在是用「启动 Bluebird.bat」直接运行的，不参与自动更新。装上安装版以后才会自动更新'
+      ? '现在是用「启动 Bluebird.bat」直接运行的，不参与更新。装上安装版以后才能检查和下载更新'
       : st.state === 'checking'
         ? '正在检查有没有新版本…'
-        : st.state === 'downloading'
-          ? `发现新版本 ${st.version ?? ''}，正在下载…${st.percent ? ` ${st.percent}%` : ''}`
+        : st.state === 'available'
+          ? `发现新版本 ${st.version ?? ''}。点「下载更新」开始下载，下载好以后再决定要不要马上重启安装`
+          : st.state === 'downloading'
+          ? `正在下载新版本 ${st.version ?? ''}…${st.percent ? ` ${st.percent}%` : ''}`
           : st.state === 'ready'
             ? `新版本 ${st.version ?? ''} 已经下载好了。点「重启并更新」马上装上；不点的话，下次退出程序时会自动装上`
             : st.state === 'latest'
@@ -1005,6 +1007,10 @@ function UpdateRow({ notify }: { notify: (msg: string, kind?: 'ok' | 'error') =>
       {st.state === 'ready' ? (
         <button className="primary-btn" onClick={() => api.updateInstall().catch((err) => notify((err as Error).message, 'error'))}>
           重启并更新
+        </button>
+      ) : st.state === 'available' ? (
+        <button className="primary-btn" onClick={() => api.updateDownload().then(setSt).catch((err) => notify((err as Error).message, 'error'))}>
+          下载更新
         </button>
       ) : (
         <button

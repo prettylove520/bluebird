@@ -60,7 +60,8 @@ export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
   if (!app.isPackaged) return status
   if (!manual && getSettings().general.autoUpdate === false) return status
   // 已经下载好、等着安装的，不用再查
-  if (checking || status.state === 'downloading' || status.state === 'ready') return status
+  // 已经发现了新版本、正在下、下载好了：不用再查，等用户决定
+  if (checking || status.state === 'available' || status.state === 'downloading' || status.state === 'ready') return status
   checking = true
   lastCheck = Date.now()
   set({ state: 'checking' })
@@ -72,6 +73,21 @@ export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
     set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
   } finally {
     checking = false
+  }
+  return status
+}
+
+/** 用户点了「下载更新」：开始下载，下载好了会变成 ready，由用户决定要不要马上重启安装 */
+export async function downloadUpdate(): Promise<UpdateStatus> {
+  if (status.state !== 'available') return status
+  set({ state: 'downloading', version: status.version, percent: 0 })
+  try {
+    await applyProxy()
+    await autoUpdater.downloadUpdate()
+  } catch (err) {
+    console.warn('[更新] 下载失败：' + String((err as Error)?.message || err).split('\n')[0])
+    // 下载途中 error 事件可能已经把状态改成出错了，没改的话这里补上
+    if ((status as UpdateStatus).state === 'downloading') set({ state: 'error', error: friendly(err), version: status.version, checkedAt: Date.now() })
   }
   return status
 }
@@ -92,8 +108,9 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
   notify = onStatus
   if (!app.isPackaged || started) return
   started = true
-  autoUpdater.autoDownload = true
-  // 没点「重启更新」也没关系：下次正常退出程序时会自动装上
+  // 发现新版本先告诉用户，由用户决定下不下载；下载好了再问要不要马上重启
+  autoUpdater.autoDownload = false
+  // 下载好了但用户选了「稍后」：下次正常退出程序时会自动装上
   autoUpdater.autoInstallOnAppQuit = true
   autoUpdater.allowDowngrade = false
   autoUpdater.logger = {
@@ -102,7 +119,7 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
     error: (m: unknown) => console.warn('[更新]', m),
     debug: () => undefined
   }
-  autoUpdater.on('update-available', (info: { version: string }) => set({ state: 'downloading', version: info.version, percent: 0 }))
+  autoUpdater.on('update-available', (info: { version: string }) => set({ state: 'available', version: info.version, checkedAt: Date.now() }))
   autoUpdater.on('update-not-available', () => set({ state: 'latest', checkedAt: Date.now() }))
   autoUpdater.on('download-progress', (p: { percent: number }) => {
     const percent = Math.max(0, Math.min(100, Math.round(p.percent || 0)))
@@ -113,7 +130,7 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
   autoUpdater.on('error', (err: Error) => {
     console.warn('[更新] 出错：' + String(err?.message || err).split('\n')[0])
     // 已经下载好了的话，后面再报什么错都不影响安装
-    if (status.state !== 'ready') set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
+    if (status.state !== 'ready') set({ state: 'error', error: friendly(err), version: status.version, checkedAt: Date.now() })
   })
   // 打开程序 10 秒后查一次，之后每小时查一次；切回窗口时离上次超过半小时也会查
   setTimeout(() => void checkForUpdate(), 10000)

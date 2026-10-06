@@ -62,6 +62,7 @@ const api = {
   translateTexts: invoke('translate:texts'),
   updateStatus: invoke('update:status'),
   updateCheck: invoke('update:check'),
+  updateDownload: invoke('update:download'),
   updateInstall: invoke('update:install'),
   backupInfo: invoke('backup:info'),
   backupDetect: invoke('backup:detect'),

@@ -4411,3 +4411,6 @@ kbd {
   background: var(--danger);
   box-shadow: 0 0 0 2px var(--bg, #fff);
 }
+.update-banner .update-go:disabled {
+  opacity: 0.6;
+}

@@ -132,6 +132,7 @@ export const api = {
   translateTexts: (texts: string[], xml: boolean) => call<{ texts: string[]; from: string }>('translateTexts', texts, xml),
   updateStatus: () => call<UpdateStatus>('updateStatus'),
   updateCheck: () => call<UpdateStatus>('updateCheck'),
+  updateDownload: () => call<UpdateStatus>('updateDownload'),
   updateInstall: () => call<boolean>('updateInstall'),
   testNotify: () => call<{ supported: boolean }>('testNotify'),
   backupInfo: () => call<BackupInfo>('backupInfo'),
