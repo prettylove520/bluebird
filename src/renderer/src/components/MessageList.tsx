@@ -286,6 +286,17 @@ export function MessageList(props: Props) {
   const { messages, selectedKey, checked } = props
   const listRef = useRef<HTMLDivElement>(null)
   const selecting = checked.size > 0 || props.multi
+  // 加载很快（本地缓存几十毫秒就出来）时不显示骨架条，等超过 0.35 秒还没好才显示，免得切换栏目时一闪而过
+  const [slow, setSlow] = useState(false)
+  const waiting = props.loading && !messages.length
+  useEffect(() => {
+    if (!waiting) {
+      setSlow(false)
+      return
+    }
+    const t = setTimeout(() => setSlow(true), 350)
+    return () => clearTimeout(t)
+  }, [waiting])
   // 每一行用到的操作：始终转给最新的 props，自己的引用不变，行才能被缓存
   const latest = useRef(props)
   latest.current = props
@@ -571,7 +582,7 @@ export function MessageList(props: Props) {
           props.onFolderMenu(e.clientX, e.clientY)
         }}
       >
-        {props.loading && !messages.length && (
+        {waiting && slow && (
           <div className="skeletons" aria-label="正在加载">
             {Array.from({ length: 7 }, (_, i) => (
               <div key={i} className="skeleton-row">
