@@ -242,7 +242,7 @@ export async function listMessages(account: Account, path: string, before?: numb
     messages.sort((a, b) => b.seq - a.seq)
     harvestContacts(account, path, messages)
     return { messages, total: exists, hasMore: start > 1 }
-  })
+  }, lane)
 }
 
 /** 从列表里顺手攒联系人：「已发送」里的收件人，以及给你来过信的真人 */
@@ -323,7 +323,7 @@ export async function searchEverywhere(account: Account, query: string): Promise
 
 export async function searchMessages(account: Account, path: string, query: string, lane: Lane = 'main'): Promise<MessagePage> {
   const q = query.trim()
-  if (!q) return listMessages(account, path)
+  if (!q) return listMessages(account, path, undefined, lane)
   return withMailbox(account, path, async (client) => {
     const isGmail = account.imap.host === 'imap.gmail.com'
     const criteria = isGmail
@@ -335,7 +335,7 @@ export async function searchMessages(account: Account, path: string, query: stri
     const messages = await collect(client, account, path, latest, true)
     messages.sort((a, b) => b.uid - a.uid)
     return { messages, total: uids.length, hasMore: false }
-  })
+  }, lane)
 }
 
 /**
