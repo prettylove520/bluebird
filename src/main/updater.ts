@@ -11,6 +11,8 @@ let status: UpdateStatus = { state: app.isPackaged ? 'idle' : 'unsupported' }
 let notify: (s: UpdateStatus) => void = () => undefined
 let checking = false
 let started = false
+/** 这一轮检查是不是静默的（已经有待处理的新版本） */
+let checkQuiet = false
 
 let lastCheck = 0
 
@@ -59,20 +61,23 @@ async function applyProxy(): Promise<void> {
 export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
   if (!app.isPackaged) return status
   if (!manual && getSettings().general.autoUpdate === false) return status
-  // 已经下载好、等着安装的，不用再查
-  // 已经发现了新版本、正在下、下载好了：不用再查，等用户决定
-  if (checking || status.state === 'available' || status.state === 'downloading' || status.state === 'ready') return status
+  // 正在下载时不打断；其余情况（包括已经提示过、没更新的旧版本）都照常查，这样发了更新的版本就直接提示最新的
+  if (checking || status.state === 'downloading') return status
+  // 已经有「可下载 / 已下载」的版本时静默查：界面不闪、查不到也不报错，只在发现更新的版本时才换成它
+  const quiet = status.state === 'available' || status.state === 'ready'
   checking = true
   lastCheck = Date.now()
-  set({ state: 'checking' })
+  checkQuiet = quiet
+  if (!quiet) set({ state: 'checking' })
   try {
     await applyProxy()
     await autoUpdater.checkForUpdates()
   } catch (err) {
     console.warn('[更新] 检查失败：' + String((err as Error)?.message || err).split('\n')[0])
-    set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
+    if (!quiet) set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
   } finally {
     checking = false
+    checkQuiet = false
   }
   return status
 }
@@ -120,8 +125,15 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
     error: (m: unknown) => console.warn('[更新]', m),
     debug: () => undefined
   }
-  autoUpdater.on('update-available', (info: { version: string }) => set({ state: 'available', version: info.version, checkedAt: Date.now() }))
-  autoUpdater.on('update-not-available', () => set({ state: 'latest', checkedAt: Date.now() }))
+  autoUpdater.on('update-available', (info: { version: string }) => {
+    // 查到的还是已经提示/下载好的那个版本：保持原状态，别把「已下载」退回「可下载」
+    if (checkQuiet && status.version === info.version) return
+    set({ state: 'available', version: info.version, checkedAt: Date.now() })
+  })
+  autoUpdater.on('update-not-available', () => {
+    if (checkQuiet) return
+    set({ state: 'latest', checkedAt: Date.now() })
+  })
   autoUpdater.on('download-progress', (p: { percent: number }) => {
     const percent = Math.max(0, Math.min(100, Math.round(p.percent || 0)))
     // 进度变化不到 1% 就不通知界面，免得刷得太勤
@@ -131,6 +143,7 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
   autoUpdater.on('error', (err: Error) => {
     console.warn('[更新] 出错：' + String(err?.message || err).split('\n')[0])
     // 已经下载好了的话，后面再报什么错都不影响安装
+    if (checkQuiet) return
     if (status.state !== 'ready') set({ state: 'error', error: friendly(err), version: status.version, checkedAt: Date.now() })
   })
   // 打开程序 10 秒后查一次，之后每 15 分钟查一次（只是读一个很小的版本说明文件）；切回窗口时离上次超过 10 分钟也会查
