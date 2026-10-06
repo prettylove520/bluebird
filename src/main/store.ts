@@ -44,7 +44,7 @@ export interface BackupConfig {
 const BACKUP_KEY_ID = '__backup__'
 
 const defaultSettings: Settings = {
-  proxy: { enabled: false, type: 'socks5', host: '127.0.0.1', port: 7890 },
+  proxy: { enabled: false, host: '127.0.0.1', port: 7890 },
   oauth: { googleClientId: '', googleClientSecret: '', microsoftClientId: '' },
   general: { theme: 'system', layout: 'wide', showHome: true, homeBackground: 'auto', closeToTray: false, launchAtLogin: false, autoUpdate: true, defaultAccountId: '' },
   reading: {
@@ -61,7 +61,7 @@ const defaultSettings: Settings = {
   },
   compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
   notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
-  translate: { target: 'ZH', useProxy: false }
+  translate: { target: 'ZH' }
 }
 
 /** 撤销发送等待的秒数：0 是关闭，最长 60 秒 */
@@ -71,18 +71,28 @@ function clampUndo(value: unknown, fallback: number): number {
   return Math.min(60, Math.max(0, Math.round(n)))
 }
 
+/** 旧版本的代理设置里还有「类型」，现在是自动识别的，去掉；地址端口不合规的换回默认 */
+function cleanProxy(p: Settings['proxy'] & { type?: unknown }): Settings['proxy'] {
+  const port = Math.round(Number(p.port))
+  return {
+    enabled: !!p.enabled,
+    host: typeof p.host === 'string' && p.host.trim() ? p.host.trim() : defaultSettings.proxy.host,
+    port: port > 0 && port < 65536 ? port : defaultSettings.proxy.port
+  }
+}
+
 /** 把磁盘上的设置和默认值合并，旧版本缺少的项用默认值补上 */
 function mergeSettings(raw?: Partial<Settings> & { notifications?: boolean }): Settings {
   const d = defaultSettings
   return {
-    proxy: { ...d.proxy, ...raw?.proxy },
+    proxy: cleanProxy({ ...d.proxy, ...raw?.proxy }),
     oauth: { ...d.oauth, ...raw?.oauth },
     general: { ...d.general, ...raw?.general },
     reading: { ...d.reading, ...raw?.reading },
     compose: { ...d.compose, ...raw?.compose, undoSeconds: clampUndo(raw?.compose?.undoSeconds, d.compose.undoSeconds) },
     // 旧版本只有一个 notifications 开关
     notify: { ...d.notify, ...(raw?.notifications === false ? { enabled: false } : {}), ...raw?.notify },
-    translate: { ...d.translate, ...raw?.translate }
+    translate: { target: raw?.translate?.target || d.translate.target }
   }
 }
 

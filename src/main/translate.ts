@@ -26,7 +26,6 @@ async function call(path: string, key: string, body?: unknown): Promise<unknown>
       method: body ? 'POST' : 'GET',
       headers: { Authorization: `DeepL-Auth-Key ${key}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
       body: body ? JSON.stringify(body) : undefined,
-      useProxy: getSettings().translate.useProxy,
       timeoutMs: 30000
     })
   } catch (err) {
@@ -34,7 +33,7 @@ async function call(path: string, key: string, body?: unknown): Promise<unknown>
     throw new Error(
       aborted
         ? '翻译服务半天没有回应，请过一会儿再试'
-        : `连不上翻译服务（DeepL）。${getSettings().translate.useProxy ? '请确认代理软件开着' : '如果一直连不上，可以到「设置 → 翻译」里打开「通过代理连接」'}`
+        : `连不上翻译服务（DeepL）。请检查网络${getSettings().proxy.enabled ? '和代理软件' : '；如果一直连不上，可以到「设置 → 代理」里启用代理，翻译会自动改走代理'}`
     )
   }
   if (!res.ok) throw fail(res.status)

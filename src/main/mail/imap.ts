@@ -5,7 +5,7 @@ import { ImapFlow, type ImapFlowOptions } from 'imapflow'
 import type { Account } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
 import { getSecret, getSettings } from '../store'
-import { proxyUrl } from '../net'
+import { proxyRoute, withProxySlot } from '../net'
 import { friendlyError, isAuthError, isConnectionError } from './errors'
 import { classify, CLASSIFY_HEADERS } from './classify'
 import type { MailCategory } from '../../shared/types'
@@ -42,9 +42,10 @@ export async function buildImapOptions(account: Account, override?: { password?:
   // 非 SSL 端口（一般是 143）必须先升级成加密连接再登录，避免密码明文传输
   if (!account.imap.secure) opts.doSTARTTLS = true
 
-  const proxy = getSettings().proxy
-  if (account.useProxy && proxy.enabled && proxy.host) {
-    opts.proxy = proxyUrl(proxy)
+  // 要走代理的账号：代理软件没开会直接报错，不会干等到连接超时
+  if (account.useProxy) {
+    const route = await proxyRoute()
+    if (route) opts.proxy = route
   }
   return opts
 }
@@ -82,7 +83,8 @@ async function openClient(account: Account): Promise<ImapFlow> {
     const client = new ImapFlow(await buildImapOptions(account))
     // 一定要监听 error，否则断线时会让整个主进程崩溃
     client.on('error', (err: Error) => console.warn(`[imap ${account.email}]`, err.message))
-    await client.connect()
+    // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断
+    await (account.useProxy ? withProxySlot(() => client.connect()) : client.connect())
     return client
   }
   try {
@@ -299,11 +301,12 @@ export function startWatcher(
   const w: Watcher = { stopped: false, retry: 0 }
   watchers.set(account.id, w)
 
-  const schedule = (): void => {
+  const schedule = (proxyDown = false): void => {
     if (w.stopped) return
     const delays = [5, 15, 30, 60, 120, 300]
-    const delay = delays[Math.min(w.retry, delays.length - 1)] * 1000
-    w.retry++
+    // 代理软件没开的时候不用越等越久：它一开就该马上连上，探一下代理端口很便宜
+    const delay = proxyDown ? 10000 : delays[Math.min(w.retry, delays.length - 1)] * 1000
+    if (!proxyDown) w.retry++
     w.timer = setTimeout(run, delay)
   }
 
@@ -314,7 +317,7 @@ export function startWatcher(
       client = await openClient(account)
     } catch (err) {
       console.warn(`[watch ${account.email}] 连接失败`, (err as Error).message)
-      schedule()
+      schedule((err as { code?: string }).code === 'PROXY_DOWN')
       return
     }
     if (w.stopped) {

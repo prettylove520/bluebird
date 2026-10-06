@@ -33,7 +33,6 @@ export interface Account {
 
 export interface ProxySettings {
   enabled: boolean
-  type: 'socks5' | 'http'
   host: string
   port: number
 }
@@ -113,8 +112,6 @@ export interface NotifySettings {
 export interface TranslateSettings {
   /** 翻译成哪种语言（DeepL 的语言代码，ZH 是简体中文） */
   target: string
-  /** 连接 DeepL 时走不走代理 */
-  useProxy: boolean
 }
 
 export interface Settings {

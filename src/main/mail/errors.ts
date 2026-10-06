@@ -1,5 +1,7 @@
 // 把各种底层错误翻译成用户能看懂的中文提示
 
+import { getSettings } from '../store'
+
 interface MailError {
   message?: string
   code?: string
@@ -20,7 +22,7 @@ export function isAuthError(err: unknown): boolean {
 export function isConnectionError(err: unknown): boolean {
   const e = (err || {}) as MailError
   return (
-    ['ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ETIMEOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'NoConnection', 'ESOCKET', 'ECONNECTION', 'EDNS', 'EAI_AGAIN'].includes(
+    ['PROXY_DOWN', 'ECONNREFUSED', 'ECONNRESET', 'ENOTFOUND', 'ETIMEDOUT', 'ETIMEOUT', 'EPIPE', 'EHOSTUNREACH', 'ENETUNREACH', 'NoConnection', 'ESOCKET', 'ECONNECTION', 'EDNS', 'EAI_AGAIN'].includes(
       e.code || ''
     ) ||
     /Connection not available|socket|closed|timeout|timed.?out|proxy|getaddrinfo|ENOTFOUND|EAI_AGAIN|aborted|net::ERR_(INTERNET_DISCONNECTED|NAME_NOT_RESOLVED|CONNECTION_|NETWORK_|ADDRESS_UNREACHABLE|TIMED_OUT|PROXY_|SOCKS_|TUNNEL_)/i.test(
@@ -33,6 +35,7 @@ export function friendlyError(err: unknown, ctx?: { host?: string; useProxy?: bo
   const e = (err || {}) as MailError
   const text = `${e.responseText || ''} ${e.response || ''} ${e.message || ''}`
 
+  if (e.code === 'PROXY_DOWN') return e.message || '代理软件没有开启'
   if (/Unsafe Login/i.test(text)) {
     return '网易邮箱拒绝了这次登录（Unsafe Login）。请确认网页版已开启 IMAP/SMTP 服务，并使用授权码而不是登录密码。'
   }
@@ -49,7 +52,14 @@ export function friendlyError(err: unknown, ctx?: { host?: string; useProxy?: bo
     return `找不到服务器 ${ctx?.host ?? ''}，请检查服务器地址是否填写正确。`
   }
   if (isConnectionError(err)) {
-    const hint = ctx?.useProxy ? '请检查网络和代理设置（代理软件是否已开启、端口是否正确）。' : '请检查网络；如果是国外邮箱，可以在账号里开启「通过代理连接」。'
+    const proxyOn = getSettings().proxy.enabled
+    const hint = ctx?.useProxy
+      ? proxyOn
+        ? '代理软件开着，但没能通过它连上。请确认它选好了能访问国外网站的节点，或者到「设置 → 代理」点「测试代理」看看。'
+        : '这个邮箱设成了通过代理连接，但「设置 → 代理」里还没有启用代理。'
+      : proxyOn
+        ? '请检查网络；如果是国外邮箱，可以在账号设置里打开「通过代理连接」。'
+        : '请检查网络；如果是国外邮箱，需要先在「设置 → 代理」里启用代理，再到账号设置里打开「通过代理连接」。'
     return `连接服务器失败${ctx?.host ? `（${ctx.host}）` : ''}：${hint}`
   }
   const msg = (e.responseText || e.message || String(err)).trim()

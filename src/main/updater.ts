@@ -4,7 +4,7 @@
 import { app } from 'electron'
 import { autoUpdater } from 'electron-updater'
 import type { UpdateStatus } from '../shared/types'
-import { proxyUrl } from './net'
+import { proxyRoute } from './net'
 import { getSettings } from './store'
 
 let status: UpdateStatus = { state: app.isPackaged ? 'idle' : 'unsupported' }
@@ -40,9 +40,10 @@ function friendly(err: unknown): string {
 
 /** 更新走不走代理跟着设置来：启用了代理就走代理（国内直连 GitHub 经常连不上） */
 async function applyProxy(): Promise<void> {
-  const p = getSettings().proxy
   try {
-    await autoUpdater.netSession.setProxy(p.enabled && p.host ? { proxyRules: proxyUrl(p), proxyBypassRules: '<local>' } : { mode: 'system' })
+    // 启用了代理就走代理；代理软件没开的话改回跟随系统，别让更新卡死在一条走不通的路上
+    const route = await proxyRoute().catch(() => null)
+    await autoUpdater.netSession.setProxy(route ? { proxyRules: route, proxyBypassRules: '<local>' } : { mode: 'system' })
   } catch {
     // 设置代理失败就按原样去连
   }

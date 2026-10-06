@@ -289,8 +289,29 @@ export function SettingsDialog(props: Props) {
     setTesting(true)
     setTestResult(null)
     try {
-      const ms = await api.testProxy(draft.proxy)
-      setTestResult({ ok: true, text: `代理可用，访问 Google 用时 ${ms} 毫秒` })
+      const r = await api.testProxy(draft.proxy)
+      setTestResult({ ok: true, text: `代理可用（${r.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}），访问 Google 用时 ${r.ms} 毫秒` })
+    } catch (err) {
+      setTestResult({ ok: false, text: (err as Error).message })
+    } finally {
+      setTesting(false)
+    }
+  }
+
+  const detectProxy = async (): Promise<void> => {
+    setTesting(true)
+    setTestResult(null)
+    try {
+      const found = await api.detectProxy()
+      if (!found) {
+        setTestResult({ ok: false, text: '没有找到正在运行的代理。请先打开代理软件（Clash、v2rayN 等），再点一次；或者在上面手动填它显示的端口' })
+      } else {
+        setDraft((d) => ({ ...d, proxy: { ...d.proxy, enabled: true, host: found.host, port: found.port } }))
+        setTestResult({
+          ok: true,
+          text: `找到了 ${found.host}:${found.port}（${found.kind === 'socks5' ? 'SOCKS5' : 'HTTP'}，${found.source === 'system' ? '来自系统代理设置' : '常用端口'}），已填好并启用。点「测试代理」确认能访问国外网站，再点「保存」`
+        })
+      }
     } catch (err) {
       setTestResult({ ok: false, text: (err as Error).message })
     } finally {
@@ -566,9 +587,6 @@ export function SettingsDialog(props: Props) {
                     ))}
                   </select>
                 </Row>
-                <Row title="通过代理连接 DeepL" hint="一般不用开，DeepL 在国内可以直接连。连不上的时候再打开，走「代理」那一页里设置的代理">
-                  <Switch label="通过代理连接 DeepL" checked={draft.translate.useProxy} onChange={(useProxy) => setTranslate({ useProxy })} />
-                </Row>
               </div>
             )}
 
@@ -671,7 +689,8 @@ export function SettingsDialog(props: Props) {
             {tab === 'proxy' && (
               <div className="form-stack">
                 <p className="muted">
-                  在国内连接 Gmail、Outlook 等国外邮箱需要代理。这里填你电脑上代理软件的本地地址，然后在每个账号里单独选择是否走代理，国内邮箱可以直连。
+                  Gmail、Outlook 这类国外邮箱在国内需要代理。这里填你电脑上代理软件的本地地址就行，是 SOCKS5 还是 HTTP 不用选，Bluebird 自己会识别。
+                  哪些邮箱走代理，在每个账号里单独设置：国外邮箱默认走，国内邮箱默认直连。
                 </p>
                 <label className="check">
                   <input
@@ -682,14 +701,6 @@ export function SettingsDialog(props: Props) {
                   启用代理
                 </label>
                 <div className="proxy-row">
-                  <select
-                    value={draft.proxy.type}
-                    onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, type: e.target.value as 'socks5' | 'http' } })}
-                    aria-label="代理类型"
-                  >
-                    <option value="socks5">SOCKS5</option>
-                    <option value="http">HTTP</option>
-                  </select>
                   <input
                     value={draft.proxy.host}
                     onChange={(e) => setDraft({ ...draft, proxy: { ...draft.proxy, host: e.target.value.trim() } })}
@@ -704,14 +715,20 @@ export function SettingsDialog(props: Props) {
                   />
                 </div>
                 <p className="muted small">
-                  常见默认端口：Clash 系列 7890（SOCKS5 和 HTTP 都可以）；v2rayN 的 SOCKS5 是 10808，HTTP 是 10809。以你软件里显示的为准。
+                  不知道填什么就点「自动检测」，它会先看 Windows 的系统代理设置，再找常见的代理端口（Clash 7890、v2rayN 10808/10809 等）。
                 </p>
                 {testResult && <p className={testResult.ok ? 'test-ok' : 'form-error'}>{testResult.text}</p>}
                 <div className="save-bar">
+                  <button className="ghost-btn bordered" onClick={detectProxy} disabled={testing}>
+                    {testing ? '请稍等…' : '自动检测'}
+                  </button>
                   <button className="ghost-btn bordered" onClick={testProxy} disabled={testing}>
-                    {testing ? '正在测试…' : '测试代理'}
+                    测试代理
                   </button>
                 </div>
+                <p className="muted small">
+                  更新程序、浏览器登录、翻译也会用这里的代理：启用后优先走代理，代理软件没开时会自动改成直连，不用另外设置。
+                </p>
               </div>
             )}
 

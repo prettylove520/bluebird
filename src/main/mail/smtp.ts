@@ -9,8 +9,8 @@ import { existsSync } from 'fs'
 import { hostname } from 'os'
 import type { Account, OutgoingMessage } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
-import { getAccount, getSecret, getSettings } from '../store'
-import { proxyUrl } from '../net'
+import { getAccount, getSecret } from '../store'
+import { proxyRoute } from '../net'
 import { noteContacts } from '../contacts'
 import { friendlyError, isAuthError, isConnectionError } from './errors'
 import { appendMessage, findSpecialPath, getAttachment, setFlag } from './service'
@@ -46,13 +46,12 @@ async function createTransport(account: Account, password?: string) {
     tls: { servername: account.smtp.host }
   }
 
-  const proxy = getSettings().proxy
-  const useProxy = account.useProxy && proxy.enabled && !!proxy.host
-  if (useProxy) options.proxy = proxyUrl(proxy)
+  const route = account.useProxy ? await proxyRoute() : null
+  if (route) options.proxy = route
 
   const transporter = nodemailer.createTransport(options)
   // nodemailer 自带 HTTP 代理支持，SOCKS 代理需要手动挂上 socks 模块
-  if (useProxy && proxy.type === 'socks5') {
+  if (route?.startsWith('socks5:')) {
     transporter.set('proxy_socks_module', socks)
   }
   return transporter

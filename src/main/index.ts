@@ -40,7 +40,7 @@ import { detect } from './presets'
 import { cancelOAuth } from './oauth'
 import { dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
-import { httpFetch, testProxy } from './net'
+import { detectProxy, httpFetch, testProxy } from './net'
 import { isKnownSender, searchContacts } from './contacts'
 import { checkForUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
@@ -813,6 +813,7 @@ function registerIpc(): void {
   })
 
   handle('proxy:test', (proxy: ProxySettings) => testProxy(proxy))
+  handle('proxy:detect', () => detectProxy())
 
   handle('app:openDataDir', async () => {
     const err = await shell.openPath(dataDir())

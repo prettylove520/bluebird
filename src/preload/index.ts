@@ -80,6 +80,7 @@ const api = {
   pickFiles: invoke('dialog:pickFiles'),
   openExternal: invoke('shell:open'),
   testProxy: invoke('proxy:test'),
+  detectProxy: invoke('proxy:detect'),
   setControls: invoke('window:controls'),
   homeImage: invoke('home:image'),
   pickHomeImage: invoke('home:pick'),

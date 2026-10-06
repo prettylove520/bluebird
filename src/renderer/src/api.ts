@@ -147,7 +147,8 @@ export const api = {
   pickHomeImage: () => call<string | null>('pickHomeImage'),
   clearHomeImage: () => call<boolean>('clearHomeImage'),
   setControls: (light: boolean) => call<boolean>('setControls', light),
-  testProxy: (p: ProxySettings) => call<number>('testProxy', p),
+  testProxy: (p: ProxySettings) => call<{ ms: number; kind: 'socks5' | 'http' }>('testProxy', p),
+  detectProxy: () => call<{ host: string; port: number; kind: 'socks5' | 'http'; source: 'system' | 'scan' } | null>('detectProxy'),
   openDataDir: () => call<boolean>('openDataDir'),
 
   onNewMail: (cb: (e: NewMailEvent) => void) => listen<NewMailEvent>('onNewMail', cb),
