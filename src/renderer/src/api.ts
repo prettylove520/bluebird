@@ -95,6 +95,7 @@ export const api = {
   scheduleAdd: (msg: OutgoingMessage, sendAt: number) => call<UserData>('scheduleAdd', msg, sendAt),
   scheduleCancel: (id: string) => call<UserData>('scheduleCancel', id),
   scheduleSendNow: (id: string) => call<UserData>('scheduleSendNow', id),
+  prefetch: (accountId: string, folder: string, uids: number[]) => call<boolean>('prefetch', accountId, folder, uids),
   previews: (accountId: string, folder: string, uids: number[]) =>
     call<Record<number, string>>('previews', accountId, folder, uids),
   flag: (accountId: string, folder: string, uids: number | number[], flag: 'seen' | 'flagged', value: boolean) =>

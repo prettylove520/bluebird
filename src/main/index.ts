@@ -51,6 +51,7 @@ import {
   deleteMessage,
   getAttachment,
   getMessage,
+  PREFETCH_MAX_BYTES,
   getPreviews,
   getRawMessage,
   resetMemoryCaches,
@@ -905,6 +906,28 @@ function registerIpc(): void {
     }
     putCachedDetail(detail)
     return forReader(account, detail)
+  })
+  // 提前把马上可能要看的邮件取回来存好（鼠标停在上面、J/K 翻信时的前后几封）。不改已读状态，走后台连接，出错不吭声
+  const prefetching = new Set<string>()
+  handle('mail:prefetch', async (accountId: string, folder: string, uids: number[]) => {
+    const account = need(accountId)
+    const list = (Array.isArray(uids) ? uids : []).filter((u) => Number.isInteger(u) && u > 0).slice(0, 6)
+    for (const uid of list) {
+      const key = `${accountId}|${folder}|${uid}`
+      if (prefetching.has(key)) continue
+      const cached = getCachedDetail(accountId, folder, uid)
+      if (cached && cached.v === 2) continue
+      prefetching.add(key)
+      try {
+        const detail = await getMessage(account, folder, uid, false, { lane: 'bg', maxSize: PREFETCH_MAX_BYTES })
+        putCachedDetail(detail)
+      } catch {
+        // 取不到就算了，真点开的时候会再取一次并报告错误
+      } finally {
+        prefetching.delete(key)
+      }
+    }
+    return true
   })
   handle('mail:searchAll', (accountId: string, q: string) => searchEverywhere(need(accountId), String(q || '')))
   handle('contacts:search', (q: string) => searchContacts(String(q || '')))

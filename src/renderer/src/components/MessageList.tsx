@@ -83,6 +83,8 @@ interface Props {
   onSearch: () => void
   onClearSearch: () => void
   onSelect: (m: MessageSummary) => void
+  /** 鼠标停在某一行上（null 是离开了），用来提前取这封邮件 */
+  onHover?: (m: MessageSummary | null) => void
   onCheck: (m: MessageSummary, range: boolean) => void
   onCheckAll: () => void
   onClearChecked: () => void
@@ -474,6 +476,8 @@ export function MessageList(props: Props) {
                   else if (e.ctrlKey || e.metaKey || selecting) props.onCheck(m, false)
                   else props.onSelect(m)
                 }}
+                onMouseEnter={() => props.onHover?.(m)}
+                onMouseLeave={() => props.onHover?.(null)}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   props.onContextMenu(m, e.clientX, e.clientY)

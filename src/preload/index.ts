@@ -29,6 +29,7 @@ const api = {
   list: invoke('mail:list'),
   search: invoke('mail:search'),
   get: invoke('mail:get'),
+  prefetch: invoke('mail:prefetch'),
   previews: invoke('mail:previews'),
   listByUids: invoke('mail:listByUids'),
   cachedList: invoke('cache:list'),

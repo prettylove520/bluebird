@@ -650,15 +650,32 @@ function visibleAttachments(parsed: ParsedMail): AttachmentInfo[] {
     }))
 }
 
-export async function getMessage(account: Account, folder: string, uid: number, markSeen = true): Promise<MessageDetail> {
-  const { source, flags } = await withMailbox(account, folder, async (client) => {
-    const msg = await client.fetchOne(String(uid), { uid: true, flags: true, source: true }, { uid: true })
-    if (!msg || !msg.source) throw new Error('这封邮件已经不存在了（可能已在别处被删除或移动）')
-    if (markSeen && !msg.flags?.has('\\Seen')) {
-      await client.messageFlagsAdd(String(uid), ['\\Seen'], { uid: true })
-    }
-    return { source: msg.source, flags: msg.flags }
-  })
+/** 邮件太大就不提前取（预取是白送的，不值得为它下载一个大附件） */
+export const PREFETCH_MAX_BYTES = 2 * 1024 * 1024
+
+export async function getMessage(
+  account: Account,
+  folder: string,
+  uid: number,
+  markSeen = true,
+  opts: { lane?: Lane; maxSize?: number } = {}
+): Promise<MessageDetail> {
+  const { source, flags } = await withMailbox(
+    account,
+    folder,
+    async (client) => {
+      if (opts.maxSize) {
+        const meta = await client.fetchOne(String(uid), { uid: true, size: true }, { uid: true })
+        if (meta && meta.size && meta.size > opts.maxSize) throw new Error('邮件太大，不提前取')
+      }
+      const msg = await client.fetchOne(String(uid), { uid: true, flags: true, source: true }, { uid: true })
+      if (!msg || !msg.source) throw new Error('这封邮件已经不存在了（可能已在别处被删除或移动）')
+      return { source: msg.source, flags: msg.flags }
+    },
+    opts.lane ?? 'main'
+  )
+  // 已读标记不用等：正文取回来就先给界面，标记在后面悄悄补上（少一次和服务器来回）
+  if (markSeen && !flags?.has('\\Seen')) setFlag(account, folder, uid, 'seen', true).catch(() => undefined)
 
   // mailparser 默认会把正文里 cid: 引用的内嵌图片替换成 data: 地址
   const parsed = await simpleParser(source)

@@ -780,6 +780,36 @@ export default function App() {
     setMessages((list) => list.map((m) => (keyOf(m) === k ? { ...m, ...patch } : m)))
   }
 
+  // 提前把可能马上要看的邮件取回来存好，真点开时就是读本地。同一封只提前取一次
+  const prefetched = useRef(new Set<string>())
+  const prefetchRows = (rows: MsgRef[]): void => {
+    const groups = new Map<string, { accountId: string; folder: string; uids: number[] }>()
+    for (const r of rows) {
+      const k = keyOf(r)
+      if (prefetched.current.has(k)) continue
+      prefetched.current.add(k)
+      const gk = `${r.accountId}|${r.folder}`
+      if (!groups.has(gk)) groups.set(gk, { accountId: r.accountId, folder: r.folder, uids: [] })
+      groups.get(gk)!.uids.push(r.uid)
+    }
+    // 只记最近的几百封，免得集合一直长大
+    if (prefetched.current.size > 500) prefetched.current = new Set([...prefetched.current].slice(-200))
+    for (const g of groups.values()) void api.prefetch(g.accountId, g.folder, g.uids).catch(() => undefined)
+  }
+  /** 点这一行会打开的那封（会话里是最早没读的一封，都读过就是最新的一封） */
+  const targetOfRow = (m: MessageSummary): MessageSummary => {
+    const g = threadOf(m) ?? [m]
+    const unread = g.filter((x) => !x.seen)
+    return g.length < 2 ? g[0] ?? m : unread.length ? unread[unread.length - 1] : g[0]
+  }
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const hoverRow = (m: MessageSummary | null): void => {
+    if (hoverTimer.current) clearTimeout(hoverTimer.current)
+    hoverTimer.current = null
+    // 鼠标停了一小会儿才算「想看」，划过去的不取
+    if (m) hoverTimer.current = setTimeout(() => prefetchRows([targetOfRow(m)]), 200)
+  }
+
   const select = async (ref: MsgRef, list: MessageSummary[] = messages): Promise<void> => {
     const k = keyOf(ref)
     // 从通知点进来、列表还在加载时，用户已经改看别的信了：列表回来后不要再把他拽回去
@@ -800,6 +830,11 @@ export default function App() {
       const d = await api.get(ref.accountId, ref.folder, ref.uid, markSeen)
       // 正文可能来自缓存，星标以列表里的最新状态为准
       if (id === detailReq.current) setDetail(summary ? { ...d, flagged: summary.flagged } : d)
+      // 这封看到了，顺手把下面三封、上面一封提前取好，接着往下翻就是秒开
+      if (id === detailReq.current) {
+        const at = visible.findIndex((m) => (threadOf(m) ?? [m]).some((x) => keyOf(x) === k))
+        if (at >= 0) prefetchRows([1, 2, 3, -1].map((step) => visible[at + step]).filter(Boolean).map(targetOfRow))
+      }
     } catch (err) {
       if (id === detailReq.current) setDetailError((err as Error).message)
     } finally {
@@ -2997,6 +3032,7 @@ export default function App() {
               }
             }}
             onSelect={(m) => openRow(m)}
+            onHover={hoverRow}
             onAction={onRowAction}
             onLoadMore={(auto) => void loadMore(auto)}
             onRefresh={() => refreshView()}
