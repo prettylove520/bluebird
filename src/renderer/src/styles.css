@@ -1675,13 +1675,21 @@ select:focus {
 }
 .check-mark {
   position: absolute;
-  inset: 0;
+  left: 8px;
+  top: 8px;
+  width: 22px;
+  height: 22px;
+  box-sizing: border-box;
   display: none;
   place-items: center;
-  border-radius: 50%;
-  border: 2px solid var(--ink-3);
-  background: var(--bg-elev);
+  border-radius: 6px;
+  border: 1.5px solid var(--ink-3);
+  background: transparent;
   color: #fff;
+  transition: background 0.12s, border-color 0.12s;
+}
+.check-mark svg {
+  stroke-width: 2.6;
 }
 .check-mark.on {
   display: grid;

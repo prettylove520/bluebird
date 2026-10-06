@@ -43,6 +43,7 @@ const PATHS = {
   more: 'M5 12h.01 M12 12h.01 M19 12h.01',
   mailOpen: 'M3 10l9-6 9 6v10H3z M3 10l9 6 9-6',
   checkAll: 'M2 13l4 4 8-9 M11 17l1 0 9-10',
+  multiSelect: 'M4 4.5h6v6H4z M5.5 7.5l1.5 1.5 2-2.5 M13.5 7.5H20 M4 13.5h6v6H4z M13.5 16.5H20',
   move: 'M3 6h6l2 2h10v11H3z M8 13.5h7 M12.5 11l2.5 2.5-2.5 2.5',
   bell: 'M6 16V11a6 6 0 0 1 12 0v5l2 2H4z M10 20a2 2 0 0 0 4 0',
   bolt: 'M13 3L5 13.5h6L10 21l8-10.5h-6z',

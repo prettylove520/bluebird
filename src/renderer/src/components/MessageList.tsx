@@ -188,7 +188,7 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
             {r.avatarLabel}
           </span>
           <span className={`check-mark ${r.isChecked ? 'on' : ''}`} role="checkbox" aria-checked={r.isChecked} aria-label="选择这封邮件">
-            {r.isChecked && <Icon name="check" size={16} />}
+            {r.isChecked && <Icon name="check" size={14} />}
           </span>
         </span>
         <span className="msg-main">
@@ -420,7 +420,7 @@ export function MessageList(props: Props) {
             aria-pressed={props.multi}
             disabled={!messages.length && !props.multi}
           >
-            <Icon name="checkAll" size={20} />
+            <Icon name="multiSelect" size={20} />
           </button>
           <button className="head-btn no-drag" onClick={props.onCheckAll} title="全选（Ctrl+A）" aria-label="全选" disabled={!messages.length}>
             <Icon name="checkCircle" size={20} />
