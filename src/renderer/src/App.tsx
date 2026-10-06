@@ -55,6 +55,10 @@ import {
 
 /** accountId 为 ALL 时表示「所有收件箱」 */
 export const ALL = '*'
+/** 合并视图里 folder 的取值：INBOX 是所有收件箱，下面这两个是所有邮箱的已删除、已发送 */
+export const ALL_TRASH = '@trash'
+export const ALL_SENT = '@sent'
+const UNIFIED_USE: Record<string, 'trash' | 'sent'> = { [ALL_TRASH]: 'trash', [ALL_SENT]: 'sent' }
 /** 「稍后处理」是一个虚拟视图，里面是被推迟的邮件 */
 export const SNOOZED = '~snoozed'
 /** 「已置顶」也是虚拟视图 */
@@ -283,6 +287,17 @@ export default function App() {
   // ---------- 数据加载 ----------
   const inboxPath = (accountId: string): string =>
     folders[accountId]?.find((f) => f.specialUse === 'inbox')?.path || 'INBOX'
+  /** 「所有邮箱合在一起看」时，某个账号对应的真实文件夹；这个账号没有这种文件夹就返回 undefined */
+  const unifiedFolder = (accountId: string, key: string): string | undefined => {
+    const use = UNIFIED_USE[key]
+    return use ? folders[accountId]?.find((f) => f.specialUse === use)?.path : inboxPath(accountId)
+  }
+  /** 合并视图要去取的每个账号的文件夹（没有对应文件夹的账号跳过） */
+  const unifiedTargets = (key: string): { accountId: string; folder: string }[] =>
+    accounts.flatMap((a) => {
+      const folder = unifiedFolder(a.id, key)
+      return folder ? [{ accountId: a.id, folder }] : []
+    })
 
   // ---------- 列表里实际显示哪些邮件 ----------
   const snoozedView = view?.accountId === SNOOZED
@@ -291,7 +306,7 @@ export default function App() {
   const inboxView =
     !!view &&
     !virtualView &&
-    (view.accountId === ALL || view.folder === 'INBOX' || folders[view.accountId]?.find((f) => f.path === view.folder)?.specialUse === 'inbox')
+    ((view.accountId === ALL && !UNIFIED_USE[view.folder]) || (view.accountId !== ALL && view.folder === 'INBOX') || folders[view.accountId]?.find((f) => f.path === view.folder)?.specialUse === 'inbox')
   const smartInbox = !!settings?.reading.smartInbox && inboxView && !activeQuery
   /** 屏蔽名单里既可以是完整地址，也可以是「@域名」 */
   const isBlocked = (address: string): boolean =>
@@ -466,7 +481,7 @@ export default function App() {
       const page = await (q ? api.search(v.accountId, v.folder, q) : api.list(v.accountId, v.folder))
       return { ...page, refreshed: [groupOf({ accountId: v.accountId, folder: v.folder, uid: 0 })] }
     }
-    const targets = accounts.map((a) => ({ id: a.id, folder: inboxPath(a.id) }))
+    const targets = unifiedTargets(v.folder).map((t) => ({ id: t.accountId, folder: t.folder }))
     const results = await Promise.allSettled(targets.map((t) => (q ? api.search(t.id, t.folder, q) : api.list(t.id, t.folder))))
     const merged: MessageSummary[] = []
     let sum = 0
@@ -488,7 +503,7 @@ export default function App() {
         }
       } else {
         failed++
-        firstError ||= `${accounts[i].email}：${(r.reason as Error).message}`
+        firstError ||= `${accounts.find((a) => a.id === t.id)?.email || ''}：${(r.reason as Error).message}`
       }
     })
     if (failed === results.length && failed > 0) throw new Error(firstError)
@@ -516,7 +531,7 @@ export default function App() {
   /** 置顶的邮件可能比较旧，不在最新一页里，单独取回来放进列表 */
   const loadPinnedExtras = async (v: View, have: MessageSummary[], reqId: number): Promise<void> => {
     const haveKeys = new Set(have.map(keyOf))
-    const targets = v.accountId === ALL ? accounts.map((a) => ({ accountId: a.id, folder: inboxPath(a.id) })) : [v]
+    const targets = v.accountId === ALL ? unifiedTargets(v.folder) : [v]
     const jobs: Promise<MessageSummary[]>[] = []
     for (const t of targets) {
       const uids = Object.keys(dataRef.current.pinned)
@@ -551,7 +566,7 @@ export default function App() {
     // 先显示上次缓存的内容，再向服务器要最新的
     let fromCache = false
     if (!silent && !q && !isVirtual(v.accountId)) {
-      const targets = v.accountId === ALL ? accounts.map((a) => ({ accountId: a.id, folder: inboxPath(a.id) })) : [v]
+      const targets = v.accountId === ALL ? unifiedTargets(v.folder) : [v]
       const pages = await Promise.all(targets.map((t) => api.cachedList(t.accountId, t.folder).catch(() => null)))
       if (id !== listReq.current) return
       const cached = pages.flatMap((p) => p?.messages ?? [])
@@ -749,6 +764,8 @@ export default function App() {
       setShowDrafts(true)
       return
     }
+    // 有好几个邮箱：已删除、已发送把所有邮箱的合在一起看（每封信上标着是哪个邮箱的）
+    if (accounts.length > 1 && (t === 'trash' || t === 'sent')) return selectFolder(ALL, t === 'trash' ? ALL_TRASH : ALL_SENT)
     const id = activeAccountId()
     const f = id ? folders[id]?.find((x) => x.specialUse === t) : undefined
     if (id && f) {
@@ -1188,7 +1205,7 @@ export default function App() {
 
   /** 一个视图对应哪些真实文件夹：「所有收件箱」对应每个账号的收件箱 */
   const targetsOf = (v: View): FolderRef[] =>
-    isVirtual(v.accountId) ? [] : v.accountId === ALL ? accounts.map((a) => ({ accountId: a.id, folder: inboxPath(a.id) })) : [{ ...v }]
+    isVirtual(v.accountId) ? [] : v.accountId === ALL ? unifiedTargets(v.folder) : [{ ...v }]
 
   const refreshView = (v: View | null = view): void => {
     if (!v) return
@@ -1278,7 +1295,7 @@ export default function App() {
     const targets = targetsOf(v)
     const unified = v.accountId === ALL
     const f = unified ? undefined : folderOf(v)
-    const label = unified ? '所有收件箱' : f?.displayName || v.folder
+    const label = unified ? (v.folder === ALL_TRASH ? '所有已删除' : v.folder === ALL_SENT ? '所有已发送' : '所有收件箱') : f?.displayName || v.folder
     const total = targets.reduce((sum, t) => sum + (folderOf(t)?.total ?? 0), 0)
     const unseen = targets.reduce((sum, t) => sum + (folderOf(t)?.unseen ?? 0), 0)
     const isCurrent = !!view && view.accountId === v.accountId && view.folder === v.folder
@@ -2382,7 +2399,10 @@ export default function App() {
   const refreshIfViewing = (accountId: string, onlyInbox: boolean): void => {
     if (!view || activeQuery || isVirtual(view.accountId)) return
     if (view.accountId === ALL) {
-      if (accountId !== ALL && accounts.some((a) => a.id === accountId)) void refreshOneInbox(accountId)
+      // 合在一起看的已删除、已发送：新邮件到了不用单独刷某个收件箱，整个重新取一遍就行
+      if (UNIFIED_USE[view.folder]) {
+        if (!onlyInbox) void loadList(view, '', true)
+      } else if (accountId !== ALL && accounts.some((a) => a.id === accountId)) void refreshOneInbox(accountId)
       else void loadList(view, '', true)
       return
     }
@@ -2394,7 +2414,7 @@ export default function App() {
   handlers.current.onNewMail = ({ accountId, notify: n, messages: fresh }) => {
     void loadFolders(accountId)
     // 监听连接已经把新邮件的摘要带来了：马上插进正在看的收件箱，不用等重新连服务器取列表（走代理时要好几秒）
-    if (fresh?.length && view && !activeQuery && !isVirtual(view.accountId) && (view.accountId === ALL || (view.accountId === accountId && view.folder === inboxPath(accountId)))) {
+    if (fresh?.length && view && !activeQuery && !isVirtual(view.accountId) && ((view.accountId === ALL && !UNIFIED_USE[view.folder]) || (view.accountId === accountId && view.folder === inboxPath(accountId)))) {
       const all = view.accountId === ALL
       setMessages((cur) => {
         const have = new Set(cur.map(keyOf))
@@ -2721,9 +2741,14 @@ export default function App() {
     : pinnedView
     ? '已置顶'
     : unified
-      ? '所有收件箱'
+      ? view?.folder === ALL_TRASH
+        ? '已删除'
+        : view?.folder === ALL_SENT
+          ? '已发送'
+          : '所有收件箱'
       : folder?.displayName || (view?.folder === 'INBOX' ? '收件箱' : view?.folder || '')
-  const unseenHere = virtualView ? 0 : unified ? inboxUnseen : folder?.unseen ?? 0
+  const unifiedUse = unified && view ? UNIFIED_USE[view.folder] : undefined
+  const unseenHere = virtualView ? 0 : unified ? (unifiedUse ? 0 : inboxUnseen) : folder?.unseen ?? 0
   const activeSubtitle = (): string =>
     globalSearch
       ? listLoading
@@ -2839,6 +2864,8 @@ export default function App() {
     ? 'pinned'
     : inboxView
     ? 'inbox'
+    : unifiedUse
+    ? unifiedUse
     : folder?.specialUse === 'drafts' || folder?.specialUse === 'sent' || folder?.specialUse === 'trash'
     ? folder.specialUse
     : null

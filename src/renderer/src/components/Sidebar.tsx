@@ -61,7 +61,7 @@ export function Sidebar(props: Props) {
       <nav className="nav">
         {accounts.length > 1 && (
           <button
-            className={`nav-item ${view?.accountId === '*' ? 'active' : ''}`}
+            className={`nav-item ${view?.accountId === '*' && view.folder === 'INBOX' ? 'active' : ''}`}
             onClick={props.onSelectAll}
             onContextMenu={(e) => {
               e.preventDefault()
