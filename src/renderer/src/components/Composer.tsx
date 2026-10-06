@@ -613,7 +613,7 @@ export function Composer(props: Props) {
                   </div>
                   <select value={aiTone} onChange={(e) => setAiTone(e.target.value)} title="语气" aria-label="语气">
                     {AI_TONES.map((t) => (
-                      <option key={t.id} value={t.id}>
+                      <option key={t.id} value={t.id} title={t.hint}>
                         {t.label}
                       </option>
                     ))}

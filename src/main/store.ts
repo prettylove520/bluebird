@@ -6,6 +6,7 @@ import { existsSync, mkdirSync, rmSync } from 'fs'
 import { readJsonSafe, writeJsonSafe } from './jsonfile'
 import { join } from 'path'
 import type { Account, Settings } from '../shared/types'
+import { AI_TONES } from '../shared/ai'
 
 export interface PasswordSecret {
   kind: 'password'
@@ -94,7 +95,7 @@ export function cleanAi(a: Settings['ai']): Settings['ai'] {
     model: text(a.model, d.model),
     customName: text(a.customName, '').slice(0, 40),
     language: a.language === 'en' ? 'en' : 'zh',
-    tone: ['friendly', 'formal', 'concise'].includes(a.tone) ? a.tone : d.tone
+    tone: AI_TONES.some((t) => t.id === a.tone) ? a.tone : d.tone
   }
 }
 

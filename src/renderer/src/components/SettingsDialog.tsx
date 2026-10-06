@@ -623,7 +623,7 @@ export function SettingsDialog(props: Props) {
                 <Row title="写邮件的默认语气">
                   <select value={draft.ai.tone} onChange={(e) => setAi({ tone: e.target.value })}>
                     {AI_TONES.map((t) => (
-                      <option key={t.id} value={t.id}>
+                      <option key={t.id} value={t.id} title={t.hint}>
                         {t.label}
                       </option>
                     ))}
