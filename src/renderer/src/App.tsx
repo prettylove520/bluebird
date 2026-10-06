@@ -1295,7 +1295,7 @@ export default function App() {
       },
       { label: '刷新', icon: 'refresh', separator: true, onClick: () => refreshView(v) }
     )
-    if (isCurrent && visible.length) items.push({ label: '全选', icon: 'checkAll', onClick: checkAll })
+    if (isCurrent && visible.length) items.push({ label: '全选', icon: 'checkCircle', onClick: checkAll })
     // 文件夹管理：自己建的文件夹可以改名、删除；系统文件夹（收件箱、已发送…）不行
     if (!unified && !isVirtual(v.accountId) && accounts.some((a) => a.id === v.accountId)) {
       items.push({ label: '新建文件夹…', icon: 'plus', separator: true, onClick: () => promptNewFolder(v.accountId) })
@@ -2906,7 +2906,7 @@ export default function App() {
       list.push(
         { label: '全部标为已读', icon: 'mailOpen', keywords: 'read all', run: markAllRead },
         { label: '刷新', icon: 'refresh', keywords: 'refresh reload', run: () => refreshView() },
-        { label: '全选', hint: 'Ctrl+A', icon: 'checkAll', keywords: 'select all', run: checkAll }
+        { label: '全选', hint: 'Ctrl+A', icon: 'checkCircle', keywords: 'select all', run: checkAll }
       )
     }
     if (accounts.length > 1) list.push({ label: '转到：所有收件箱', icon: 'inbox', keywords: 'inbox all', run: () => selectFolder(ALL, 'INBOX') })
