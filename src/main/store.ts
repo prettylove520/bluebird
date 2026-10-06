@@ -63,7 +63,7 @@ const defaultSettings: Settings = {
   compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
   notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
   translate: { target: 'ZH' },
-  ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', customName: '', language: 'zh', tone: 'friendly' }
+  ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', customName: '', language: 'zh', tone: 'natural' }
 }
 
 /** 撤销发送等待的秒数：0 是关闭，最长 60 秒 */

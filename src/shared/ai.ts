@@ -126,19 +126,9 @@ export type AiTask = 'summarize' | 'compose' | 'reply' | 'polish'
 
 /** 写作的语气 */
 export const AI_TONES: { id: string; label: string; hint: string }[] = [
-  { id: 'friendly', label: '友好自然', hint: '像平时和同事、客户说话那样，礼貌但不生硬' },
-  { id: 'warm', label: '热情亲切', hint: '温暖、积极，表达关心和善意，适合熟悉的人和老客户，可以带一点点口语' },
-  { id: 'formal', label: '正式', hint: '商务场合的正式措辞，用语严谨，结构清楚' },
-  { id: 'professional', label: '专业干练', hint: '直接切入重点，条理清楚，不绕弯子，也不过分客套' },
-  { id: 'respectful', label: '恭敬谦逊', hint: '写给上级、长辈或重要客户：措辞谦虚恭敬，多用「您」，态度诚恳' },
-  { id: 'concise', label: '简短', hint: '尽量短，几句话说清楚' },
-  { id: 'grateful', label: '感谢', hint: '真诚地表达感谢，具体说出感谢的是什么，不空泛' },
-  { id: 'apology', label: '诚恳致歉', hint: '坦率承认问题，真诚道歉，说明会怎么补救，不找借口，也不过度卑微' },
-  { id: 'request', label: '委婉请求', hint: '礼貌地请对方帮忙或配合，说明原因和时间，给对方留有余地' },
-  { id: 'urgent', label: '催办跟进', hint: '礼貌但明确地提醒对方，说清楚事项和期限，不带责备，也不含糊' },
-  { id: 'firm', label: '坚定明确', hint: '立场清楚、语气平稳地说明（比如拒绝、不同意、坚持条件），不失礼貌，不留模糊空间' },
-  { id: 'empathy', label: '体谅安慰', hint: '先理解对方的处境和心情，再说事情；语气温和，不说教' },
-  { id: 'humor', label: '轻松幽默', hint: '轻松活泼，可以有一点点幽默，但不轻浮，不影响事情本身说清楚' }
+  { id: 'natural', label: '自然（像本人写的）', hint: '像真人平时写邮件：口语自然，不客套，看不出是 AI 写的' },
+  { id: 'formal', label: '正式', hint: '商务场合的正式措辞，但依然是真人写信的口吻，不堆砌套话' },
+  { id: 'concise', label: '简短', hint: '尽量短，几句话说清楚' }
 ]
 
 export interface AiMail {
