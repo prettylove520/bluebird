@@ -225,6 +225,11 @@ async function collect(
   }
 }
 
+/** 用已经连着的连接，按 UID 取几封邮件的列表摘要（新邮件监听用，不另外建连接） */
+export function summarizeUids(client: ImapFlow, account: Account, path: string, uids: number[]): Promise<MessageSummary[]> {
+  return uids.length ? collect(client, account, path, uids, true) : Promise.resolve([])
+}
+
 /** 按 UID 取指定的几封邮件（置顶和推迟的邮件不一定在最新一页里） */
 export async function listByUids(account: Account, path: string, uids: number[]): Promise<MessageSummary[]> {
   if (!uids.length) return []

@@ -479,6 +479,8 @@ export interface NewMailEvent {
   count: number
   /** 需要提醒用户的那部分（已经排除了屏蔽的发件人、免打扰时段等）；不需要提醒时没有这一项 */
   notify?: { count: number; uid: number; from: string; subject: string }
+  /** 新到的邮件的列表摘要：界面直接插进收件箱，不用再连一次服务器去取 */
+  messages?: MessageSummary[]
 }
 
 export interface Result<T> {

@@ -13,6 +13,7 @@ import type {
   OutgoingMessage,
   ProxySettings,
   MessageDetail,
+  MessageSummary,
   Result,
   AttachmentPreview,
   ScheduledMail,
@@ -74,7 +75,8 @@ import {
   markAll,
   moveMessage,
   searchMessages,
-  setFlag
+  setFlag,
+  summarizeUids
 } from './mail/service'
 import { sendMessage } from './mail/smtp'
 import { applyRules, cleanRules, runOnInbox } from './rules'
@@ -102,7 +104,12 @@ function showNote(options: { title: string; body?: string; silent?: boolean }, o
     onClick?.()
   })
   note.on('close', done)
-  note.on('failed', done)
+  // 记下系统有没有真的把通知弹出来：Windows 的「请勿打扰」「专注助手」会悄悄吞掉，出问题时看日志就知道
+  note.on('show', () => console.warn(`[通知] 系统已弹出：${options.title}`))
+  note.on('failed', (_e, err) => {
+    console.warn(`[通知] 系统通知弹出失败：${err}`)
+    done()
+  })
   // 兜底：有的系统不触发 close，十分钟后不再保留
   setTimeout(done, 10 * 60 * 1000)
   note.show()
@@ -290,6 +297,7 @@ function watch(account: Account): void {
     async (incoming) => {
       console.warn(`[新邮件] ${account.email} 收到 ${incoming.length} 封`)
       let mails = incoming
+      let gone = new Set<number>()
       // 先按邮件规则处理（最多等 8 秒，服务器慢的话不耽误提醒和刷新列表）
       try {
         const done = await Promise.race([
@@ -297,7 +305,10 @@ function watch(account: Account): void {
           new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
         ])
         // 已读的、规则要求不弹通知的、已经被移走的邮件不再提醒
-        if (done) mails = incoming.filter((m) => !done.quiet.has(m.uid))
+        if (done) {
+          mails = incoming.filter((m) => !done.quiet.has(m.uid))
+          gone = done.gone
+        }
       } catch (err) {
         console.warn(`[规则 ${account.email}] 执行失败：`, (err as Error).message)
       }
@@ -311,15 +322,36 @@ function watch(account: Account): void {
       const quiet = !n.enabled || inQuietHours()
       // 界面要刷新列表；该提醒的那几封也带过去，窗口里会弹一条提示
       const first = mails[0]
+      // 新邮件的列表摘要：存进本地缓存（下次打开收件箱先显示的就是它），也随事件交给界面直接插进列表
+      const fresh = incoming.filter((m) => m.summary && !gone.has(m.uid)).map((m) => m.summary as MessageSummary)
+      if (fresh.length) {
+        try {
+          const cached = getCachedList(account.id, 'INBOX')
+          if (cached) {
+            const have = new Set(cached.messages.map((m) => m.uid))
+            const add = fresh.filter((m) => !have.has(m.uid))
+            if (add.length) putCachedList(account.id, 'INBOX', { ...cached, messages: [...add, ...cached.messages].slice(0, 100), total: cached.total + add.length })
+          }
+        } catch (err) {
+          console.warn(`[新邮件] 更新本地缓存失败`, (err as Error).message)
+        }
+      }
       send('mail:new', {
         accountId: account.id,
         count: incoming.length,
+        messages: fresh,
         notify: quiet || !first ? undefined : { count: mails.length, uid: first.uid, from: n.showContent ? first.from : '', subject: n.showContent ? first.subject : '' }
       })
-      if (quiet || !mails.length) return
+      if (quiet || !mails.length) {
+        console.warn(`[通知] ${account.email} 的 ${incoming.length} 封新邮件没有提醒：${!n.enabled ? '通知开关是关的' : quiet ? '在免打扰时间内' : '已读、被规则静音或被屏蔽'}`)
+        return
+      }
       // 窗口没在前面时，让任务栏图标闪一下
       if (win && !win.isDestroyed() && win.isVisible() && !win.isFocused()) win.flashFrame(true)
-      if (!Notification.isSupported()) return
+      if (!Notification.isSupported()) {
+        console.warn('[通知] 这台电脑不支持系统通知')
+        return
+      }
       const silent = !n.sound
       const options = !n.showContent
         ? { title: 'Bluebird', body: `${account.email} 有 ${mails.length} 封新邮件`, silent }
@@ -332,7 +364,8 @@ function watch(account: Account): void {
         send('mail:open', { accountId: account.id, folder: 'INBOX', uid: only })
       })
     },
-    () => send('mail:changed', { accountId: account.id })
+    () => send('mail:changed', { accountId: account.id }),
+    (client, uids) => summarizeUids(client, account, 'INBOX', uids)
   )
 }
 

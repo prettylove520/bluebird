@@ -2385,8 +2385,18 @@ export default function App() {
     void loadList(view, '', true)
   }
 
-  handlers.current.onNewMail = ({ accountId, notify: n }) => {
+  handlers.current.onNewMail = ({ accountId, notify: n, messages: fresh }) => {
     void loadFolders(accountId)
+    // 监听连接已经把新邮件的摘要带来了：马上插进正在看的收件箱，不用等重新连服务器取列表（走代理时要好几秒）
+    if (fresh?.length && view && !activeQuery && !isVirtual(view.accountId) && (view.accountId === ALL || (view.accountId === accountId && view.folder === inboxPath(accountId)))) {
+      const all = view.accountId === ALL
+      setMessages((cur) => {
+        const have = new Set(cur.map(keyOf))
+        const add = fresh.filter((m) => !have.has(keyOf(m)))
+        if (!add.length) return cur
+        return [...add, ...cur].sort(all ? byDateDesc : (a, b) => b.seq - a.seq)
+      })
+    }
     refreshIfViewing(accountId, true)
     if (!n) return
     // 窗口里也弹一条：系统通知被 Windows 的「请勿打扰」挡住时，这里照样能看到

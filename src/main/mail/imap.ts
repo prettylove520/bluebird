@@ -2,7 +2,7 @@
 // 外加一个常驻在收件箱的「监听连接」用 IDLE 接收新邮件推送
 
 import { ImapFlow, type ImapFlowOptions } from 'imapflow'
-import type { Account } from '../../shared/types'
+import type { Account, MessageSummary } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
 import { getSecret, getSettings } from '../store'
 import { proxyRoute, withProxySlot } from '../net'
@@ -302,6 +302,8 @@ export interface NewMailInfo {
   /** 收件人的名字和邮箱地址，小写，用空格隔开（给邮件规则比对用） */
   to: string
   subject: string
+  /** 这封邮件在列表里要显示的摘要（监听连接顺手取回来的，界面可以直接插进列表，不用再连一次服务器） */
+  summary?: MessageSummary
 }
 
 interface Watcher {
@@ -311,6 +313,11 @@ interface Watcher {
   timer?: NodeJS.Timeout
   /** 定时问一下服务器有没有新邮件 */
   poll?: NodeJS.Timeout
+  /** 上次看到收件箱里有多少封；变了就去看有没有新邮件（不光靠服务器推送） */
+  exists: number
+  /** 正在查新邮件；查的时候又有变化，查完再来一遍 */
+  checking?: boolean
+  again?: boolean
 }
 
 // 有的邮箱（QQ 邮箱尤其明显）虽然支持「有新邮件就推送」，实际经常不推。所以每隔一会儿主动问一次，
@@ -354,10 +361,12 @@ const watchers = new Map<string, Watcher>()
 export function startWatcher(
   account: Account,
   onNew: (mails: NewMailInfo[]) => void,
-  onChange: () => void
+  onChange: () => void,
+  /** 取一批新邮件在列表里显示用的摘要 */
+  summarize?: (client: ImapFlow, uids: number[]) => Promise<MessageSummary[]>
 ): void {
   stopWatcher(account.id)
-  const w: Watcher = { stopped: false, retry: 0 }
+  const w: Watcher = { stopped: false, retry: 0, exists: 0 }
   watchers.set(account.id, w)
 
   const schedule = (proxyDown = false): void => {
@@ -390,19 +399,54 @@ export function startWatcher(
       w.poll = undefined
       schedule()
     })
-    client.on('exists', async (data: { count: number; prevCount: number }) => {
-      if (data.count <= data.prevCount) return
-      try {
-        const { mails, maxUid } = await fetchNewInfos(client, `${data.prevCount + 1}:${data.count}`, false)
-        // 取的这会儿监听已经被换掉了（唤醒、改设置）：新的监听会负责，这里不要再提醒一遍
-        if (w.stopped) return
-        if (maxUid > (lastSeenUid.get(account.id) ?? 0)) lastSeenUid.set(account.id, maxUid)
-        if (mails.length) onNew(mails)
-        else onChange()
-      } catch (err) {
-        console.warn(`[watch ${account.email}] 获取新邮件失败`, (err as Error).message)
-        onChange()
+    // 查有没有新邮件：按 UID 取比「已经见过的最大编号」更大的。服务器推送（exists）和定时的 NOOP 之后都会走这里，
+    // 推送丢了也不会漏；两边同时触发时排队，一次只查一遍，不会提醒两次
+    const check = async (): Promise<void> => {
+      if (w.checking) {
+        w.again = true
+        return
       }
+      w.checking = true
+      try {
+        do {
+          w.again = false
+          const after = lastSeenUid.get(account.id)
+          if (after === undefined || w.stopped || w.client !== client || !client.usable) break
+          let result: { mails: NewMailInfo[]; maxUid: number }
+          try {
+            result = await fetchNewInfos(client, `${after + 1}:*`, true, after)
+          } catch (err) {
+            console.warn(`[watch ${account.email}] 获取新邮件失败`, (err as Error).message)
+            onChange()
+            break
+          }
+          // 取的这会儿监听已经被换掉了（唤醒、改设置）：新的监听会负责，这里不要再提醒一遍
+          if (w.stopped || w.client !== client) break
+          if (result.maxUid > after) lastSeenUid.set(account.id, result.maxUid)
+          if (result.mails.length) {
+            await attachSummaries(client, result.mails)
+            if (w.stopped || w.client !== client) break
+            onNew(result.mails.slice(-20))
+          } else if (result.maxUid > after) onChange()
+        } while (w.again)
+      } finally {
+        w.checking = false
+      }
+    }
+    // 给新邮件顺手取回列表要用的摘要；取不到（或太慢）就算了，界面会自己再去取
+    const attachSummaries = async (c: ImapFlow, mails: NewMailInfo[]): Promise<void> => {
+      if (!summarize || !mails.length) return
+      try {
+        const list = await Promise.race([summarize(c, mails.slice(-20).map((m) => m.uid)), new Promise<MessageSummary[]>((resolve) => setTimeout(() => resolve([]), 6000))])
+        const byUid = new Map(list.map((m) => [m.uid, m]))
+        for (const m of mails) m.summary = byUid.get(m.uid)
+      } catch (err) {
+        console.warn(`[watch ${account.email}] 取新邮件摘要失败`, (err as Error).message)
+      }
+    }
+    client.on('exists', (data: { count: number; prevCount: number }) => {
+      w.exists = data.count
+      if (data.count > data.prevCount) void check()
     })
     client.on('expunge', () => onChange())
     client.on('flags', () => onChange())
@@ -411,6 +455,7 @@ export function startWatcher(
       await client.mailboxOpen('INBOX')
       if (w.stopped) return
       w.retry = 0
+      w.exists = client.mailbox ? client.mailbox.exists : 0
       if (w.poll) clearTimeout(w.poll)
       // 每次问完再定下一次：间隔随时按设置里的最新值来，上一次还没回来也不会堆积
       const ask = (): void => {
@@ -431,7 +476,18 @@ export function startWatcher(
           .catch(() => undefined)
           .finally(() => {
             clearTimeout(dead)
-            if (!w.stopped && w.client === client) w.poll = setTimeout(ask, pollMs())
+            if (w.stopped || w.client !== client) return
+            // 服务器的「有新邮件」推送有时不来：问完之后自己看一眼收件箱封数变了没有
+            const now = client.mailbox ? client.mailbox.exists : w.exists
+            if (now !== w.exists) {
+              const grew = now > w.exists
+              w.exists = now
+              if (grew) {
+                console.warn(`[watch ${account.email}] 没收到推送，但收件箱多了邮件，去取`)
+                void check()
+              }
+            }
+            w.poll = setTimeout(ask, pollMs())
           })
       }
       w.poll = setTimeout(ask, pollMs())
@@ -440,21 +496,11 @@ export function startWatcher(
       const newest = box && box.uidNext ? box.uidNext - 1 : 0
       const after = lastSeenUid.get(account.id)
       if (after === undefined) {
-        // 第一次连上：只记下当前位置，已有的邮件不提醒
-        if (newest) lastSeenUid.set(account.id, newest)
+        // 第一次连上：只记下当前位置，已有的邮件不提醒（收件箱是空的就从 0 算起）
+        lastSeenUid.set(account.id, newest)
       } else if (newest > after) {
-        // 断线重连：把断线期间到的新邮件补上提醒。范围只到打开邮箱那一刻为止，之后再到的由上面的 exists 负责，免得提醒两遍
-        try {
-          const { mails } = await fetchNewInfos(client, `${after + 1}:${newest}`, true, after)
-          if (w.stopped) return
-          // 取成功了才往前挪位置；这次没取到的话，下次重连还会再补
-          if (newest > (lastSeenUid.get(account.id) ?? 0)) lastSeenUid.set(account.id, newest)
-          if (mails.length) onNew(mails.slice(-20))
-          else onChange()
-        } catch (err) {
-          console.warn(`[watch ${account.email}] 补取断线期间的新邮件失败`, (err as Error).message)
-          onChange()
-        }
+        // 断线重连：把断线期间到的新邮件补上提醒
+        await check()
       } else if (newest) {
         // 重连了但没有新邮件：已读状态之类可能变了，让界面刷新一下
         onChange()
