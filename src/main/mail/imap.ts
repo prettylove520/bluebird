@@ -297,6 +297,10 @@ export interface NewMailInfo {
   address: string
   category: MailCategory
   from: string
+  /** 发件人的名字（没有名字时是空） */
+  fromName: string
+  /** 收件人的名字和邮箱地址，小写，用空格隔开（给邮件规则比对用） */
+  to: string
   subject: string
 }
 
@@ -337,6 +341,8 @@ async function fetchNewInfos(client: ImapFlow, range: string, byUid: boolean, af
       address,
       category: classify(address, msg.headers, f?.name || '', msg.envelope?.subject || ''),
       from: f?.name || f?.address || '未知发件人',
+      fromName: f?.name || '',
+      to: (msg.envelope?.to || []).map((a) => `${a.name || ''} ${a.address || ''}`.trim()).join(' ').toLowerCase(),
       subject: msg.envelope?.subject || '（无主题）'
     })
   }

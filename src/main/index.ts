@@ -75,6 +75,7 @@ import {
   setFlag
 } from './mail/service'
 import { sendMessage } from './mail/smtp'
+import { applyRules, cleanRules, runOnInbox } from './rules'
 
 const APP_ID = 'com.bluebird.desktop'
 let win: BrowserWindow | null = null
@@ -284,9 +285,20 @@ function inQuietHours(): boolean {
 function watch(account: Account): void {
   startWatcher(
     account,
-    (incoming) => {
+    async (incoming) => {
       console.warn(`[新邮件] ${account.email} 收到 ${incoming.length} 封`)
       let mails = incoming
+      // 先按邮件规则处理（最多等 8 秒，服务器慢的话不耽误提醒和刷新列表）
+      try {
+        const done = await Promise.race([
+          applyRules(account, 'INBOX', incoming.map((m) => ({ uid: m.uid, from: `${m.fromName} ${m.address}`.trim().toLowerCase(), to: m.to, subject: m.subject }))),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
+        ])
+        // 已读的、规则要求不弹通知的、已经被移走的邮件不再提醒
+        if (done) mails = incoming.filter((m) => !done.quiet.has(m.uid))
+      } catch (err) {
+        console.warn(`[规则 ${account.email}] 执行失败：`, (err as Error).message)
+      }
       const n = getSettings().notify
       // 屏蔽的发件人不提醒；开启「只通知真人来信」后，通知和订阅类邮件也不提醒（重要发件人除外）
       const d = getData()
@@ -734,7 +746,21 @@ function registerIpc(): void {
     if (patch.quickReplies) allowed.quickReplies = patch.quickReplies
     if (patch.drafts) allowed.drafts = patch.drafts.filter((x) => !sentDrafts.has(x.id))
     if (patch.accepted) allowed.accepted = patch.accepted
+    if (patch.rules) allowed.rules = cleanRules(patch.rules)
     return updateData(allowed)
+  })
+
+  // 对收件箱里现有的邮件运行一次规则（只看最新的一页）
+  handle('rules:run', async () => {
+    let handled = 0
+    for (const a of getAccounts()) {
+      try {
+        handled += await runOnInbox(a)
+      } catch (err) {
+        console.warn(`[规则 ${a.email}] 运行失败：`, (err as Error).message)
+      }
+    }
+    return handled
   })
 
   handle('schedule:add', (message: OutgoingMessage, sendAt: number) => {

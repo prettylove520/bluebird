@@ -93,6 +93,7 @@ export const api = {
   listByUids: (accountId: string, folder: string, uids: number[]) =>
     call<MessageSummary[]>('listByUids', accountId, folder, uids),
   updateData: (patch: Partial<UserData>) => call<UserData>('updateData', patch),
+  runRules: () => call<number>('runRules'),
   scheduleAdd: (msg: OutgoingMessage, sendAt: number) => call<UserData>('scheduleAdd', msg, sendAt),
   scheduleCancel: (id: string) => call<UserData>('scheduleCancel', id),
   scheduleSendNow: (id: string) => call<UserData>('scheduleSendNow', id),

@@ -37,6 +37,7 @@ const api = {
   cacheClear: invoke('cache:clear'),
   updateData: invoke('data:update'),
   scheduleAdd: invoke('schedule:add'),
+  runRules: invoke('rules:run'),
   scheduleCancel: invoke('schedule:cancel'),
   scheduleSendNow: invoke('schedule:sendNow'),
   flag: invoke('mail:flag'),

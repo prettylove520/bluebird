@@ -16,7 +16,8 @@ const defaults: UserData = {
   quickReplies: ['收到，谢谢。', '好的，没问题。', '我看一下，稍后回复你。'],
   scheduled: [],
   drafts: [],
-  accepted: []
+  accepted: [],
+  rules: []
 }
 
 let data: UserData | null = null

@@ -69,7 +69,8 @@ const EMPTY_DATA: UserData = {
   quickReplies: [],
   scheduled: [],
   drafts: [],
-  accepted: []
+  accepted: [],
+  rules: []
 }
 
 /** 邮件的键是「账号|文件夹|UID」，文件夹名里可能也有竖线，所以从两头拆 */

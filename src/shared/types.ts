@@ -207,6 +207,31 @@ export interface SnoozeInfo {
   quiet?: boolean
 }
 
+/** 邮件规则：来信符合条件时自动处理。只对收件箱里新到的邮件生效，规则在本机执行 */
+export type RuleField = 'from' | 'to' | 'subject'
+export interface RuleCondition {
+  field: RuleField
+  /** 包含这段文字就算符合（不分大小写；发件人、收件人会同时比对名字和邮箱地址） */
+  value: string
+}
+export type RuleActionType = 'markRead' | 'star' | 'move' | 'archive' | 'trash' | 'silent'
+export interface RuleAction {
+  type: RuleActionType
+  /** move：移到哪个文件夹（路径） */
+  target?: string
+}
+export interface MailRule {
+  id: string
+  name: string
+  enabled: boolean
+  /** 空字符串表示所有邮箱 */
+  accountId: string
+  /** all：全部条件都符合；any：符合其中一个就行 */
+  match: 'all' | 'any'
+  conditions: RuleCondition[]
+  actions: RuleAction[]
+}
+
 /** 保存在本机的数据。邮件用「账号|文件夹|UID」作为键 */
 export interface UserData {
   pinned: Record<string, number>
@@ -221,6 +246,8 @@ export interface UserData {
   drafts: LocalDraft[]
   /** 已经点过「接受」的发件人（小写），不再提示 */
   accepted: string[]
+  /** 邮件规则，从上到下依次执行 */
+  rules: MailRule[]
 }
 
 /** 自动更新进行到哪一步了 */

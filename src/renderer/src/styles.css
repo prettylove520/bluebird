@@ -4725,3 +4725,65 @@ kbd {
   font-size: 11px;
   font-weight: 600;
 }
+
+/* 邮件规则 */
+.rule-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  margin: 10px 0;
+  background: var(--bg-elev, transparent);
+}
+.rule-card.off .rule-title {
+  opacity: 0.55;
+}
+.rule-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.rule-title {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  text-align: left;
+}
+.rule-title .small {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rule-body {
+  border-top: 1px solid var(--line);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.rule-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rule-line > span:first-child {
+  width: 54px;
+  flex: none;
+  color: var(--ink-2);
+  font-size: 13px;
+}
+.rule-line.sub {
+  margin-left: 62px;
+}
+.rule-line.sub input {
+  flex: 1;
+  min-width: 0;
+}
+.rule-foot {
+  display: flex;
+  gap: 10px;
+  margin-top: 12px;
+}

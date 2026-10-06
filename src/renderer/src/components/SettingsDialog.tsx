@@ -7,8 +7,9 @@ import { AI_PRESETS, AI_TONES, aiHost, isPresetModel, presetOf } from '../../../
 import { HOME_SCENES, resolveScene, sceneForHour } from './Home'
 import { Icon, type IconName } from './Icon'
 import { BackupPanel } from './BackupPanel'
+import { RulesPanel } from './RulesPanel'
 
-export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'translate' | 'ai' | 'notify' | 'senders' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
+export type SettingsTab = 'general' | 'look' | 'reading' | 'compose' | 'translate' | 'ai' | 'notify' | 'senders' | 'rules' | 'accounts' | 'proxy' | 'oauth' | 'backup' | 'about'
 
 interface Props {
   accounts: Account[]
@@ -68,6 +69,7 @@ const same = (a: Settings, b: Settings): boolean => JSON.stringify(a) === JSON.s
 const TABS: { id: SettingsTab; label: string; icon: IconName; color: string; gap?: boolean }[] = [
   { id: 'accounts', label: '邮箱账号', icon: 'inbox', color: '#e0559a' },
   { id: 'senders', label: '发件人', icon: 'user', color: '#a66bf0' },
+  { id: 'rules', label: '邮件规则', icon: 'bolt', color: '#a66bf0' },
   { id: 'general', label: '通用', icon: 'sliders', color: '#4f8cff', gap: true },
   { id: 'look', label: '外观', icon: 'palette', color: '#4f8cff' },
   { id: 'notify', label: '通知', icon: 'bell', color: '#2aa7d8' },
@@ -704,6 +706,10 @@ export function SettingsDialog(props: Props) {
                   confirm={props.confirm}
                 />
               </div>
+            )}
+
+            {tab === 'rules' && (
+              <RulesPanel rules={props.data.rules || []} accounts={props.accounts} onChange={(rules) => props.onSaveData({ rules })} notify={props.notify} />
             )}
 
             {tab === 'accounts' && (
