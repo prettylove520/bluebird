@@ -82,18 +82,29 @@ export async function proxyRoute(p: ProxySettings = getSettings().proxy): Promis
   return `${kind === 'socks5' ? 'socks5' : 'http'}://${p.host}:${p.port}`
 }
 
-/** 同时去连代理的数量上限：开机时七八个邮箱一起通过代理建立连接，有些代理软件会直接把多出来的断掉 */
-const SLOTS = 3
+/**
+ * 同时去连代理的数量上限：开机时七八个邮箱一起通过代理建立连接，有些代理软件会直接把多出来的断掉。
+ * 排队时用户正等着的（打开邮件、看列表）排在前面，后台的（摘要、搜索）和监听新邮件的排在后面。
+ */
+const SLOTS = 6
+export type SlotPriority = 0 | 1 | 2
 let busy = 0
-const waiting: Array<() => void> = []
-export async function withProxySlot<T>(fn: () => Promise<T>): Promise<T> {
-  if (busy >= SLOTS) await new Promise<void>((r) => waiting.push(r))
-  busy++
+const waiting: Array<{ priority: SlotPriority; go: () => void }> = []
+export async function withProxySlot<T>(fn: () => Promise<T>, priority: SlotPriority = 0): Promise<T> {
+  if (busy >= SLOTS) {
+    await new Promise<void>((go) => {
+      // 插到比自己优先级低的第一个人前面
+      const at = waiting.findIndex((w) => w.priority > priority)
+      if (at < 0) waiting.push({ priority, go })
+      else waiting.splice(at, 0, { priority, go })
+    })
+  } else busy++
   try {
     return await fn()
   } finally {
-    busy--
-    waiting.shift()?.()
+    const next = waiting.shift()
+    if (next) next.go()
+    else busy--
   }
 }
 

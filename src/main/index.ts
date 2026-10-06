@@ -314,8 +314,16 @@ function watch(account: Account): void {
   )
 }
 
+// 一个个错开启动：七八个邮箱同时去建立监听连接，会和正在加载邮件列表的连接抢网络（尤其是经过代理的时候）
+let watchTimers: NodeJS.Timeout[] = []
 function watchAll(): void {
-  for (const a of getAccounts()) watch(a)
+  for (const t of watchTimers) clearTimeout(t)
+  watchTimers = getAccounts().map((a, i) =>
+    setTimeout(() => {
+      const fresh = getAccount(a.id)
+      if (fresh) watch(fresh)
+    }, i * 1500)
+  )
 }
 
 // ---------------- 定时任务：稍后处理到点、定时发送 ----------------

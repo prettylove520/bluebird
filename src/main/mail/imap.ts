@@ -78,13 +78,16 @@ const conns = new Map<string, Conn>()
 export type Lane = 'main' | 'bg'
 const connKey = (accountId: string, lane: Lane): string => (lane === 'bg' ? `${accountId}#bg` : accountId)
 
-async function openClient(account: Account): Promise<ImapFlow> {
+async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Promise<ImapFlow> {
   const make = async (): Promise<ImapFlow> => {
     const client = new ImapFlow(await buildImapOptions(account))
     // 一定要监听 error，否则断线时会让整个主进程崩溃
     client.on('error', (err: Error) => console.warn(`[imap ${account.email}]`, err.message))
-    // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断
-    await (account.useProxy ? withProxySlot(() => client.connect()) : client.connect())
+    // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断。用户正等着的排在前面
+    const started = Date.now()
+    await (account.useProxy ? withProxySlot(() => client.connect(), lane === 'main' ? 0 : lane === 'bg' ? 1 : 2) : client.connect())
+    const took = Date.now() - started
+    if (took > 2000) console.warn(`[慢] 连上 ${account.email}（${lane}）用了 ${(took / 1000).toFixed(1)} 秒${account.useProxy ? '，走代理' : ''}`)
     return client
   }
   try {
@@ -111,7 +114,7 @@ export async function getClient(account: Account, lane: Lane = 'main'): Promise<
 
   const conn = c
   const gen = conn.gen
-  const attempt = openClient(account)
+  const attempt = openClient(account, lane)
     .then((client) => {
       // 连接途中被要求断开（改了设置、删了账号、电脑刚唤醒）：这条连接不能留着
       if (conn.gen !== gen) {
@@ -314,7 +317,7 @@ export function startWatcher(
     if (w.stopped) return
     let client: ImapFlow
     try {
-      client = await openClient(account)
+      client = await openClient(account, 'watch')
     } catch (err) {
       console.warn(`[watch ${account.email}] 连接失败`, (err as Error).message)
       schedule((err as { code?: string }).code === 'PROXY_DOWN')
