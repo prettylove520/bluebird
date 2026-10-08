@@ -996,7 +996,20 @@ function registerIpc(): void {
     }
     let detail: MessageDetail
     try {
-      detail = await getMessage(account, folder, uid, markSeen !== false)
+      // 睡眠唤醒、换网络之后，旧连接常常是「假活着」，请求会一直挂着。15 秒没回来就断开这个邮箱的连接，用新连接再取一次
+      const tryGet = (ms: number): Promise<MessageDetail> =>
+        Promise.race([
+          getMessage(account, folder, uid, markSeen !== false),
+          new Promise<never>((_, reject) => setTimeout(() => reject(Object.assign(new Error('连接服务器超时'), { slow: true })), ms))
+        ])
+      try {
+        detail = await tryGet(15000)
+      } catch (first) {
+        if (!(first as { slow?: boolean }).slow) throw first
+        console.warn(`[打开邮件] ${account.email} 15 秒没有回应，断开重连后再试一次`)
+        dropClient(account.id)
+        detail = await tryGet(40000)
+      }
     } catch (err) {
       // 没连上服务器：旧缓存虽然没有退订信息，正文还是能看的
       if (cached) return forReader(account, cached)
@@ -1520,9 +1533,12 @@ app.whenReady().then(() => {
 
   // 电脑睡眠唤醒后，旧连接基本都断了，全部重建
   powerMonitor.on('resume', () => {
-    for (const a of getAccounts()) dropClient(a.id)
-    watchAll()
-    send('mail:changed', { accountId: '*' })
+    // 刚醒来时网络（尤其是 DNS、代理）常常还没恢复，马上重连只会一片报错；等几秒再统一重建
+    setTimeout(() => {
+      for (const a of getAccounts()) dropClient(a.id)
+      watchAll()
+      send('mail:changed', { accountId: '*' })
+    }, 4000)
   })
 })
 

@@ -3286,6 +3286,11 @@ export default function App() {
             accountTag={detailAccount ? tags[detailAccount.id] : undefined}
             showAccount={accounts.length > 1}
             loading={detailLoading}
+            onRetryOpen={() => {
+              const ref = selectedRef()
+              if (!ref) return
+              void api.reconnect([ref.accountId]).then(() => select(ref))
+            }}
             error={detailError}
             hasSelection={selectedKey != null}
             canArchive={canArchive(detail)}

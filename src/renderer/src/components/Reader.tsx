@@ -57,6 +57,8 @@ interface Props {
   onMore: (x: number, y: number) => void
   /** 整屏阅读时显示「返回列表」按钮 */
   onBack?: () => void
+  /** 打开邮件等了很久：断开这个邮箱的连接重新取 */
+  onRetryOpen?: () => void
   /** 返回按钮旁边的小箭头：上一封 / 下一封 */
   onNavMenu: (x: number, y: number) => void
   /** 闪电按钮：快捷回复菜单，选中后把文字填进回复框 */
@@ -237,6 +239,30 @@ function names(list: Address[], me?: string): string {
   return list.map((a) => (me && a.address.toLowerCase() === me ? '我' : a.name || a.address)).join('、')
 }
 
+/** 「正在打开邮件」：等得太久时给个说法和重试按钮 */
+function OpeningNote({ onRetry }: { onRetry?: () => void }) {
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 8000)
+    return () => clearTimeout(t)
+  }, [])
+  return (
+    <div className="reader-empty">
+      <p>正在打开邮件…</p>
+      {slow && (
+        <>
+          <span>连接服务器比较慢（睡眠唤醒或刚换网络后常见），软件会自动重连再试</span>
+          {onRetry && (
+            <button className="link-btn" onClick={onRetry}>
+              立即重试
+            </button>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
 export function Reader(props: Props) {
   const { detail } = props
   const [allowRemote, setAllowRemote] = useState(props.autoLoadImages)
@@ -392,9 +418,7 @@ export function Reader(props: Props) {
             <Icon name="back" />
           </button>
         )}
-        <div className="reader-empty">
-          <p>正在打开邮件…</p>
-        </div>
+        <OpeningNote onRetry={props.onRetryOpen} />
       </section>
     )
   }
