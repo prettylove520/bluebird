@@ -1,6 +1,6 @@
 // 主进程入口：窗口、IPC、新邮件通知
 
-import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron'
+import { app, type MenuItemConstructorOptions, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron'
 import { mkdir, rm, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { pathToFileURL } from 'url'
@@ -249,6 +249,38 @@ function createWindow(): void {
     win = null
     // 主窗口关了，另开的附件预览窗口也跟着关
     for (const v of [...viewers]) if (!v.isDestroyed()) v.close()
+  })
+
+  // 右键：输入框里的剪切/复制/粘贴，邮件正文里选中文字后复制，链接和图片的复制。
+  // 程序自己有右键菜单的地方（邮件列表、侧边栏）会自己拦下，不会走到这里
+  win.webContents.on('context-menu', (_e, params) => {
+    const wc = win?.webContents
+    if (!wc) return
+    const items: MenuItemConstructorOptions[] = []
+    const f = params.editFlags
+    if (params.isEditable) {
+      items.push(
+        { label: '撤销', role: 'undo', enabled: f.canUndo },
+        { label: '重做', role: 'redo', enabled: f.canRedo },
+        { type: 'separator' },
+        { label: '剪切', role: 'cut', enabled: f.canCut },
+        { label: '复制', role: 'copy', enabled: f.canCopy },
+        { label: '粘贴', role: 'paste', enabled: f.canPaste },
+        { type: 'separator' },
+        { label: '全选', role: 'selectAll', enabled: f.canSelectAll }
+      )
+    } else {
+      if (params.selectionText.trim()) items.push({ label: '复制', role: 'copy' })
+      if (params.linkURL) {
+        const link = params.linkURL
+        items.push({ label: link.startsWith('mailto:') ? '复制邮箱地址' : '复制链接地址', click: () => clipboard.writeText(link.replace(/^mailto:/i, '')) })
+      }
+      if (params.mediaType === 'image') items.push({ label: '复制图片', click: () => wc.copyImageAt(params.x, params.y) })
+      // 邮件正文在一个内嵌框架里（地址是 about:srcdoc）：没选中文字时也给「全选」，选中后再复制
+      const inMailBody = params.frameURL.startsWith('about:')
+      if (items.length || inMailBody) items.push({ label: '全选', role: 'selectAll' })
+    }
+    if (items.length) Menu.buildFromTemplate(items).popup({ window: win ?? undefined })
   })
 
   // 邮件里的链接一律用系统浏览器打开；mailto 链接在本程序里写信
