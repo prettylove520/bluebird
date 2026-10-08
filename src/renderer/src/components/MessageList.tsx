@@ -11,6 +11,8 @@ export interface Bundle {
   id: MailCategory
   label: string
   count: number
+  /** 其中刚刚到的有几封 */
+  fresh: number
   /** seed 用来给小圆标配颜色，一般是发件人地址 */
   senders: { name: string; count: number; seed: string }[]
 }
@@ -59,6 +61,8 @@ interface Props {
   /** 整屏宽的单行列表 */
   wide: boolean
   bundles: Bundle[]
+  /** 刚到的新邮件（几秒后自动撤掉），列表里给它们高亮 */
+  arrived: Set<string>
   /** 智能收件箱的开关状态；不是收件箱时不传，开关就不显示 */
   smart?: boolean
   onToggleSmart: () => void
@@ -139,6 +143,7 @@ interface RowProps {
   showPreview: boolean
   selected: boolean
   isChecked: boolean
+  arrived: boolean
   selecting: boolean
   canArchive: boolean
   h: RowHandlers
@@ -160,7 +165,7 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
         role="option"
         tabIndex={r.selected ? 0 : -1}
         aria-selected={r.selected || r.isChecked}
-        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''}`}
+        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''} ${r.arrived ? 'arrived' : ''}`}
         onClick={(e) => h.select(m, e)}
         onMouseEnter={() => {
           setHot(true)
@@ -614,7 +619,7 @@ export function MessageList(props: Props) {
         {props.bundles.map((b) => (
           <div
             key={b.id}
-            className="bundle"
+            className={`bundle ${b.fresh ? 'arrived' : ''}`}
             role="button"
             tabIndex={0}
             onClick={() => props.onTab(b.id)}
@@ -640,6 +645,7 @@ export function MessageList(props: Props) {
             <span className="bundle-label">
               {b.label}
               <em>{b.count}</em>
+              {b.fresh > 0 && <b className="bundle-new">+{b.fresh} 新</b>}
             </span>
             <span className="bundle-senders">
               {b.senders.map((x) => (
@@ -698,6 +704,7 @@ export function MessageList(props: Props) {
               showPreview={props.showPreview}
               selected={selectedKey === k}
               isChecked={checked.has(k)}
+              arrived={props.arrived.has(k)}
               selecting={selecting}
               canArchive={props.canArchive(m)}
               h={rowHandlers}

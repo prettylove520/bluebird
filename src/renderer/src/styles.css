@@ -5002,3 +5002,41 @@ html[data-motion='off'] *::after {
     animation: none !important;
   }
 }
+
+/* ---------- 新邮件到达的提示 ---------- */
+@keyframes bb-arrive {
+  0%,
+  65% {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+  100% {
+    background: transparent;
+    box-shadow: inset 3px 0 0 transparent;
+  }
+}
+.list .msg.arrived {
+  animation: bb-row 0.22s var(--ease-out) backwards, bb-arrive 8s ease-out;
+}
+@keyframes bb-bundle {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  20% {
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent);
+  }
+}
+.bundle.arrived {
+  animation: bb-bundle 1.6s ease-out 2;
+}
+.bundle .bundle-new {
+  margin-left: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}

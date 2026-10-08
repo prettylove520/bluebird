@@ -209,6 +209,28 @@ export default function App() {
   const [homeImage, setHomeImage] = useState<string | null>(null)
   // 打开一个会话时，里面哪些邮件是刚才还没读的（读信页里给它们标个「新」）
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set())
+  // 刚到的新邮件：在列表里高亮几秒，折叠条上也标出「+N 新」
+  const [arrived, setArrived] = useState<Set<string>>(new Set())
+  const seenKeys = useRef<{ view: string; keys: Set<string> }>({ view: '', keys: new Set() })
+  useEffect(() => {
+    const vk = view ? `${view.accountId}|${view.folder}` : ''
+    const prev = seenKeys.current
+    seenKeys.current = { view: vk, keys: new Set(messages.map(keyOf)) }
+    // 换了文件夹、或者上一次是空的（刚打开）时不算「新到」
+    if (prev.view !== vk || !prev.keys.size) return
+    const add = messages.filter((m) => !prev.keys.has(keyOf(m)) && !m.seen && Date.now() - Date.parse(m.date) < 30 * 60 * 1000).map(keyOf)
+    if (!add.length) return
+    setArrived((a) => new Set([...a, ...add]))
+    setTimeout(
+      () =>
+        setArrived((a) => {
+          const n = new Set(a)
+          add.forEach((k) => n.delete(k))
+          return n
+        }),
+      8000
+    )
+  }, [messages])
   const [searchScope, setSearchScope] = useState<SearchScope>('all')
   const scopeRef = useRef<SearchScope>('all')
   // 这次打开程序以来已经点过退订的发件人
@@ -2866,11 +2888,12 @@ export default function App() {
             if (c) c.count++
             else counts.set(name, { count: 1, seed: m.from[0]?.address || name })
           }
+          const freshOf = new Set(list.filter((m) => arrived.has(keyOf(m))).map((m) => displayName(m.from[0])))
           const senders = [...counts.entries()]
-            .sort((a, b) => b[1].count - a[1].count)
+            .sort((a, b) => Number(freshOf.has(b[0])) - Number(freshOf.has(a[0])) || b[1].count - a[1].count)
             .slice(0, 8)
             .map(([name, v]) => ({ name, count: v.count, seed: v.seed }))
-          return [{ id: cat, label: TAB_NAMES[cat], count: list.length, senders }]
+          return [{ id: cat, label: TAB_NAMES[cat], count: list.length, fresh: list.filter((m) => arrived.has(keyOf(m))).length, senders }]
         })
       : []
   // 外观相关的几项：设置窗口里改了还没保存时，先按改的样子显示
@@ -3164,6 +3187,7 @@ export default function App() {
             compact={look.reading.density === 'compact'}
             wide={wide}
             bundles={bundles}
+            arrived={arrived}
             smart={inboxView && !activeQuery ? !!settings.reading.smartInbox : undefined}
             onToggleSmart={toggleSmart}
             onBundleRead={(cat) => {
