@@ -146,16 +146,28 @@ const oldestDate = (list: MessageSummary[]): string => list.reduce((min, m) => (
 function mergeFresh(fresh: MessageSummary[], prev: MessageSummary[], sortByDate: boolean, refreshed?: string[]): MessageSummary[] {
   const freshKeys = new Set(fresh.map(keyOf))
   const minUid = new Map<string, number>()
-  for (const m of fresh) minUid.set(groupOf(m), Math.min(minUid.get(groupOf(m)) ?? Infinity, m.uid))
+  const maxUid = new Map<string, number>()
+  for (const m of fresh) {
+    minUid.set(groupOf(m), Math.min(minUid.get(groupOf(m)) ?? Infinity, m.uid))
+    maxUid.set(groupOf(m), Math.max(maxUid.get(groupOf(m)) ?? 0, m.uid))
+  }
+  const recent = Date.now() - 15 * 60 * 1000
   // refreshed：这次真正从服务器取到了的「账号|文件夹」。没取到的（比如那个账号暂时连不上）原样保留，不能让它的邮件凭空消失
   const got = refreshed ? new Set(refreshed) : null
-  const older = prev.filter((m) => {
+  // 比服务器这次给的最新一封还新、又是刚到的：多半是新邮件提醒刚插进来、服务器那份列表慢了一步，先留着（放在最前面）
+  const newer = prev.filter((m) => {
     if (freshKeys.has(keyOf(m))) return false
+    const max = maxUid.get(groupOf(m))
+    return max !== undefined && m.uid > max && Date.parse(m.date) > recent
+  })
+  const newerKeys = new Set(newer.map(keyOf))
+  const older = prev.filter((m) => {
+    if (freshKeys.has(keyOf(m)) || newerKeys.has(keyOf(m))) return false
     if (got && !got.has(groupOf(m))) return true
     const min = minUid.get(groupOf(m))
     return min !== undefined && m.uid < min
   })
-  const merged = [...fresh, ...older]
+  const merged = [...newer, ...fresh, ...older]
   return sortByDate ? merged.sort(byDateDesc) : merged
 }
 

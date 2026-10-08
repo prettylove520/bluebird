@@ -243,6 +243,9 @@ export async function listByUids(account: Account, path: string, uids: number[])
  */
 export async function listMessages(account: Account, path: string, before?: number, lane: Lane = 'main'): Promise<MessagePage> {
   return withMailbox(account, path, async (client) => {
+    // 这条连接之前已经打开过这个文件夹的话，它记的邮件总数可能是旧的（服务器只在回应命令时才告诉新数目），
+    // 直接拿来算范围会漏掉刚到的邮件。取最新一页前先 NOOP 一下，让服务器把最新的总数报过来
+    if (!before) await client.noop().catch(() => undefined)
     const mb = client.mailbox
     const exists = mb ? mb.exists : 0
     const end = before ? Math.min(before - 1, exists) : exists
