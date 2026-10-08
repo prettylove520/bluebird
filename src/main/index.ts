@@ -327,6 +327,28 @@ function watch(account: Account): void {
       const first = mails[0]
       // 新邮件的列表摘要：存进本地缓存（下次打开收件箱先显示的就是它），也随事件交给界面直接插进列表
       const fresh = incoming.filter((m) => m.summary && !gone.has(m.uid)).map((m) => m.summary as MessageSummary)
+      // 取摘要超时或失败的新邮件：先用提醒里已有的发件人、主题、时间凑一条临时的，让它马上出现在列表里；
+      // 过一会儿界面从服务器取回完整列表时会换成真的（只给界面，不写进本地缓存）
+      const stand = incoming
+        .filter((m) => !m.summary && !gone.has(m.uid))
+        .map(
+          (m): MessageSummary => ({
+            category: m.category,
+            accountId: account.id,
+            folder: 'INBOX',
+            uid: m.uid,
+            seq: 1_000_000_000 + m.uid,
+            subject: m.subject,
+            from: [{ name: m.fromName, address: m.address }],
+            to: [],
+            date: m.date || new Date().toISOString(),
+            seen: false,
+            flagged: false,
+            answered: false,
+            hasAttachments: false,
+            size: 0
+          })
+        )
       if (fresh.length) {
         try {
           const cached = getCachedList(account.id, 'INBOX')
@@ -342,7 +364,7 @@ function watch(account: Account): void {
       send('mail:new', {
         accountId: account.id,
         count: incoming.length,
-        messages: fresh,
+        messages: [...fresh, ...stand],
         notify: quiet || !first ? undefined : { count: mails.length, uid: first.uid, from: n.showContent ? first.from : '', subject: n.showContent ? first.subject : '' }
       })
       if (quiet || !mails.length) {

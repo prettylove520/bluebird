@@ -302,6 +302,8 @@ export interface NewMailInfo {
   /** 收件人的名字和邮箱地址，小写，用空格隔开（给邮件规则比对用） */
   to: string
   subject: string
+  /** 邮件头里的日期（ISO），没有就是空 */
+  date?: string
   /** 这封邮件在列表里要显示的摘要（监听连接顺手取回来的，界面可以直接插进列表，不用再连一次服务器） */
   summary?: MessageSummary
 }
@@ -350,7 +352,8 @@ async function fetchNewInfos(client: ImapFlow, range: string, byUid: boolean, af
       from: f?.name || f?.address || '未知发件人',
       fromName: f?.name || '',
       to: (msg.envelope?.to || []).map((a) => `${a.name || ''} ${a.address || ''}`.trim()).join(' ').toLowerCase(),
-      subject: msg.envelope?.subject || '（无主题）'
+      subject: msg.envelope?.subject || '（无主题）',
+      date: msg.envelope?.date ? new Date(msg.envelope.date).toISOString() : undefined
     })
   }
   return { mails, maxUid }

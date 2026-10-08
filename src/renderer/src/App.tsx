@@ -2396,15 +2396,20 @@ export default function App() {
   /** 「所有收件箱」里只刷新某一个邮箱：来了新邮件不用等其他七八个邮箱（尤其是连得慢的）一起回来 */
   const refreshOneInbox = async (accountId: string): Promise<void> => {
     const folder = inboxPath(accountId)
-    const id = listReq.current
-    try {
-      const page = await api.list(accountId, folder)
-      if (id !== listReq.current) return
-      const group = groupOf({ accountId, folder, uid: 0 })
-      setMessages((prev) => mergeFresh(page.messages, prev, true, [group]))
-      lastListAt.current = Date.now()
-    } catch {
-      // 这个邮箱暂时连不上：保持原样，下次有动静再刷新
+    // 走代理时连服务器可能要好几十秒、也可能中途被别的刷新顶掉：没成功就隔一会儿再试，最多三次，别让新邮件一直不出现
+    for (const wait of [0, 5000, 15000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait))
+      const id = listReq.current
+      try {
+        const page = await api.list(accountId, folder)
+        if (id !== listReq.current) continue
+        const group = groupOf({ accountId, folder, uid: 0 })
+        setMessages((prev) => mergeFresh(page.messages, prev, true, [group]))
+        lastListAt.current = Date.now()
+        return
+      } catch {
+        // 这个邮箱暂时连不上：过一会儿再试
+      }
     }
   }
 
