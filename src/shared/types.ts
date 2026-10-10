@@ -379,6 +379,10 @@ export interface MessagePage {
   total: number
   /** 是否还有更早的邮件 */
   hasMore: boolean
+  /** 取这一页时文件夹的 UIDVALIDITY；下次刷新相同才能沿用缓存的摘要 */
+  uidValidity?: string
+  /** 取这一页时的分类规则签名 */
+  sig?: string
 }
 
 export interface AttachmentInfo {

@@ -133,16 +133,60 @@ async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Prom
     if (took > 2000) console.warn(`[慢] 连上 ${account.email}（${lane}）用了 ${(took / 1000).toFixed(1)} 秒${account.useProxy ? '，走代理' : ''}`)
     return client
   }
+  // 睡眠唤醒、换网络之后，偶尔有一条连接会卡在握手上半分钟以上（日志里见过 37 秒），而同一时刻新开一条两三秒就通。
+  // 所以等一小会儿还没连上，就同时再开一条，谁先通用谁，另一条关掉
+  const wait = lane === 'main' ? 8000 : 15000
+  const connectOnce = (): Promise<ImapFlow> =>
+    hedge(make, wait, () => console.warn(`[慢] ${account.email}（${lane}）${wait / 1000} 秒还没连上，同时再开一条试试`))
   try {
-    return await make()
+    return await connectOnce()
   } catch (err) {
     // OAuth 令牌可能被提前吊销，强制刷新后再试一次
     if (account.auth.type === 'oauth2' && isAuthError(err)) {
       invalidateAccessToken(account.id)
-      return await make()
+      return await connectOnce()
     }
     throw err
   }
+}
+
+/** 先跑一次；after 毫秒后还没结果就再并行跑一次，先成功的算数，晚到的连接关掉。都失败才报第一个错 */
+function hedge(make: () => Promise<ImapFlow>, after: number, onHedge: () => void): Promise<ImapFlow> {
+  return new Promise((resolve, reject) => {
+    let done = false
+    let running = 0
+    let firstErr: unknown
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const run = (): void => {
+      running++
+      make().then(
+        (client) => {
+          if (done) {
+            closeQuietly(client)
+            return
+          }
+          done = true
+          clearTimeout(timer)
+          resolve(client)
+        },
+        (err) => {
+          running--
+          if (firstErr === undefined) firstErr = err
+          if (!done && running === 0) {
+            done = true
+            clearTimeout(timer)
+            reject(firstErr)
+          }
+        }
+      )
+    }
+    run()
+    timer = setTimeout(() => {
+      if (done) return
+      onHedge()
+      run()
+    }, after)
+  })
 }
 
 export async function getClient(account: Account, lane: Lane = 'main'): Promise<ImapFlow> {
@@ -251,11 +295,11 @@ export async function withMailbox<T>(
 }
 
 /** 不需要锁定文件夹的操作（比如列出文件夹） */
-export async function withClient<T>(account: Account, fn: (client: ImapFlow) => Promise<T>): Promise<T> {
+export async function withClient<T>(account: Account, fn: (client: ImapFlow) => Promise<T>, lane: Lane = 'main'): Promise<T> {
   for (let attempt = 0; ; attempt++) {
     let client: ImapFlow
     try {
-      client = await getClient(account)
+      client = await getClient(account, lane)
     } catch (err) {
       // 正在连的时候连接被重置了，重新连一次
       if (attempt === 0 && (err as { code?: string })?.code === 'NoConnection') continue

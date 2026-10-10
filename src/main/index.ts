@@ -994,12 +994,13 @@ function registerIpc(): void {
   })
 
   handle('mail:folders', async (accountId: string) => {
-    const folders = await listFolders(need(accountId))
+    const folders = await listFolders(need(accountId), 'bg')
     putCachedFolders(accountId, folders)
     return folders
   })
   handle('mail:list', async (accountId: string, folder: string, before?: number) => {
-    const page = await listMessages(need(accountId), folder, before)
+    // 刷新第一页时把上次存的那一页交给它：只补取变了的，不用整页重取
+    const page = await listMessages(need(accountId), folder, before, 'main', before ? null : getCachedList(accountId, folder))
     // 只缓存最新的一页，下次打开时先显示它
     if (!before) putCachedList(accountId, folder, page)
     return page
@@ -1553,7 +1554,7 @@ app.whenReady().then(() => {
         for (const use of ['trash', 'sent', 'drafts'] as const) {
           try {
             const path = await findSpecialPath(a, use)
-            if (path) putCachedList(a.id, path, await listMessages(a, path, undefined, 'bg'))
+            if (path) putCachedList(a.id, path, await listMessages(a, path, undefined, 'bg', getCachedList(a.id, path)))
           } catch {
             // 取不到就算了，点开时再现取
           }

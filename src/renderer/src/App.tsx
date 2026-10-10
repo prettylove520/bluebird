@@ -496,7 +496,13 @@ export default function App() {
   }
 
   /** 取第一页；「所有收件箱」会同时取每个账号的收件箱再按时间合并 */
-  const fetchFirstPage = async (v: View, q: string, silent = false): Promise<MessagePage & { refreshed?: string[] }> => {
+  const fetchFirstPage = async (
+    v: View,
+    q: string,
+    silent = false,
+    // 「所有收件箱」：哪个账号先回来就先交给它显示，不用等最慢的那个
+    onPart?: (messages: MessageSummary[], group: string) => void
+  ): Promise<MessagePage & { refreshed?: string[] }> => {
     if (isVirtual(v.accountId)) {
       // 置顶和推迟的邮件分散在各个文件夹里，按文件夹分组各取一次
       const keys = Object.keys(v.accountId === SNOOZED ? dataRef.current.snoozed : dataRef.current.pinned)
@@ -522,7 +528,14 @@ export default function App() {
       return { ...page, refreshed: [groupOf({ accountId: v.accountId, folder: v.folder, uid: 0 })] }
     }
     const targets = unifiedTargets(v.folder).map((t) => ({ id: t.accountId, folder: t.folder }))
-    const results = await Promise.allSettled(targets.map((t) => (q ? api.search(t.id, t.folder, q) : api.list(t.id, t.folder))))
+    const results = await Promise.allSettled(
+      targets.map((t) =>
+        (q ? api.search(t.id, t.folder, q) : api.list(t.id, t.folder)).then((page) => {
+          onPart?.(page.messages, groupOf({ accountId: t.id, folder: t.folder, uid: 0 }))
+          return page
+        })
+      )
+    )
     const merged: MessageSummary[] = []
     let sum = 0
     let failed = 0
@@ -651,8 +664,17 @@ export default function App() {
       setListLoading(false)
       return
     }
+    // 所有收件箱：每个账号的最新一页一到就合进列表（新邮件马上能看到），全部回来后再整体对一遍
+    const onPart =
+      v.accountId === ALL && !q
+        ? (msgs: MessageSummary[], group: string): void => {
+            if (id !== listReq.current) return
+            setMessages((prev) => mergeFresh(msgs, prev, true, [group]))
+            if (!silent && msgs.length) setListLoading(false)
+          }
+        : undefined
     try {
-      const page = await fetchFirstPage(v, q, silent)
+      const page = await fetchFirstPage(v, q, silent, onPart)
       if (id !== listReq.current) return
       if (isVirtual(v.accountId)) {
         setMessages(page.messages)
@@ -661,7 +683,9 @@ export default function App() {
         setMessages((prev) => mergeFresh(page.messages, prev, v.accountId === ALL, page.refreshed))
         setHasMore((h) => h || page.hasMore)
       } else {
-        setMessages(page.messages)
+        // 所有收件箱：暂时没连上的账号，先留着它上次的邮件，不让它们从列表里消失
+        if (onPart) setMessages((prev) => mergeFresh(page.messages, prev, true, page.refreshed))
+        else setMessages(page.messages)
         setHasMore(page.hasMore)
         if (v.accountId !== ALL) pageSeq.current = page.messages.length ? Math.min(...page.messages.map((m) => m.seq)) : 0
       }

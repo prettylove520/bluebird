@@ -64,8 +64,10 @@ function guessSpecial(path: string): SpecialUse | undefined {
 // 每个账号的文件夹缓存，用来找「已删除」「已发送」的路径
 const folderCache = new Map<string, Folder[]>()
 
-export async function listFolders(account: Account): Promise<Folder[]> {
-  const list = await withClient(account, (c) => c.list({ statusQuery: { messages: true, unseen: true } }))
+export async function listFolders(account: Account, lane: Lane = 'main'): Promise<Folder[]> {
+  // 带上每个文件夹的未读数：服务器不支持 LIST-STATUS 时要一个个问，走代理要好几秒。
+  // 刷新侧栏用后台连接（lane = bg），不让它堵在收件箱列表前面
+  const list = await withClient(account, (c) => c.list({ statusQuery: { messages: true, unseen: true } }), lane)
   const used = new Set<SpecialUse>()
   const folders: Folder[] = []
 
@@ -241,17 +243,79 @@ export async function listByUids(account: Account, path: string, uids: number[])
 /**
  * 取一页邮件。before 是上一页里最小的序号，不传则取最新一页。
  */
-export async function listMessages(account: Account, path: string, before?: number, lane: Lane = 'main'): Promise<MessagePage> {
+/** 分类规则或「重要联系人」变了，缓存里的分类就不能再直接沿用 */
+const CLASSIFY_SIG_VERSION = 1
+function classifySig(): string {
+  return `${CLASSIFY_SIG_VERSION}|${[...getData().priority].sort().join(',')}`
+}
+
+/**
+ * 刷新第一页时尽量少取：上次的这一页还在手里（同一个 UIDVALIDITY、分类规则没变），
+ * 就只问服务器这 50 封的 UID 和标记（很小、很快），真正没见过的那几封才取完整摘要。
+ * 走代理的 Gmail、比较慢的 163，整页重取要好几秒，这样一般不到一秒。
+ */
+async function collectReusing(
+  client: ImapFlow,
+  account: Account,
+  path: string,
+  start: number,
+  end: number,
+  known: MessageSummary[]
+): Promise<MessageSummary[] | null> {
+  const byUid = new Map(known.map((m) => [m.uid, m]))
+  const slim: { uid: number; seq: number; flags?: Set<string> }[] = []
+  for await (const msg of client.fetch(`${start}:${end}`, { uid: true, flags: true })) {
+    slim.push({ uid: msg.uid, seq: msg.seq, flags: msg.flags })
+  }
+  const missing = slim.filter((s) => !byUid.has(s.uid)).map((s) => s.uid)
+  // 大半都变了（比如很久没开、或者服务器整理过），不如整页重取
+  if (missing.length > PAGE_SIZE / 2) return null
+  const fetched = new Map((await summarizeUids(client, account, path, missing)).map((m) => [m.uid, m]))
+  const priority = getData().priority
+  const out: MessageSummary[] = []
+  for (const s of slim) {
+    const fresh = fetched.get(s.uid)
+    if (fresh) {
+      out.push({ ...fresh, seq: s.seq })
+      continue
+    }
+    const old = byUid.get(s.uid)
+    if (!old) continue
+    out.push({
+      ...old,
+      seq: s.seq,
+      seen: !!s.flags?.has('\\Seen'),
+      flagged: !!s.flags?.has('\\Flagged'),
+      answered: !!s.flags?.has('\\Answered'),
+      category: priority.includes(old.from[0]?.address.toLowerCase() || '') ? 'personal' : old.category
+    })
+  }
+  return out
+}
+
+export async function listMessages(
+  account: Account,
+  path: string,
+  before?: number,
+  lane: Lane = 'main',
+  known?: MessagePage | null
+): Promise<MessagePage> {
   return withMailbox(account, path, async (client) => {
     // 这条连接之前已经打开过这个文件夹的话，它记的邮件总数可能是旧的（服务器只在回应命令时才告诉新数目），
     // 直接拿来算范围会漏掉刚到的邮件。取最新一页前先 NOOP 一下，让服务器把最新的总数报过来
     if (!before) await client.noop().catch(() => undefined)
     const mb = client.mailbox
     const exists = mb ? mb.exists : 0
+    const validity = mb && typeof mb === 'object' && 'uidValidity' in mb ? String(mb.uidValidity) : ''
+    const sig = classifySig()
     const end = before ? Math.min(before - 1, exists) : exists
-    if (end < 1) return { messages: [], total: exists, hasMore: false }
+    if (end < 1) return { messages: [], total: exists, hasMore: false, uidValidity: validity, sig }
     const start = Math.max(1, end - PAGE_SIZE + 1)
-    const messages = await collect(client, account, path, `${start}:${end}`, false)
+    let messages: MessageSummary[] | null = null
+    if (!before && known?.messages.length && validity && known.uidValidity === validity && known.sig === sig && !noHeaderFetch.has(account.id)) {
+      messages = await collectReusing(client, account, path, start, end, known.messages)
+    }
+    messages ??= await collect(client, account, path, `${start}:${end}`, false)
     messages.sort((a, b) => b.seq - a.seq)
     // 记一笔：服务器说这个文件夹有多少封，这次实际取回多少封（邮件显示得少时靠它判断是服务器没给，还是界面筛掉了）
     const note = `${exists}/${messages.length}/${start}-${end}`
@@ -260,7 +324,7 @@ export async function listMessages(account: Account, path: string, before?: numb
       console.warn(`[列表] ${account.email} ${path}：服务器报告共 ${exists} 封，本次取回 ${messages.length} 封（序号 ${start}-${end}）`)
     }
     harvestContacts(account, path, messages)
-    return { messages, total: exists, hasMore: start > 1 }
+    return { messages, total: exists, hasMore: start > 1, uidValidity: validity, sig }
   }, lane)
 }
 
