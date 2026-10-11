@@ -378,7 +378,8 @@ export default function App() {
     if (snoozedView) return !!data.snoozed[keyOf(m)]
     if (data.snoozed[keyOf(m)]) return false
     if (pinnedView && !data.pinned[keyOf(m)]) return false
-    if (waterline && m.date < waterline && !data.pinned[keyOf(m)]) return false
+    // 没读的邮件不受水位线限制：侧栏的红点数的是所有没读的，列表里却因为「还没翻到那么早」把它藏起来，就会出现有红点却找不到邮件
+    if (waterline && m.date < waterline && m.seen && !data.pinned[keyOf(m)]) return false
     return !isBlocked(senderOf(m))
   })
   // 聚焦列表只列真人来信，通知和订阅折叠成一行；其他分类页只看那一类
