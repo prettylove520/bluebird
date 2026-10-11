@@ -278,6 +278,8 @@ export default function App() {
   dataRef.current = data
 
   const listReq = useRef(0)
+  const inboxTotals = useRef<Record<string, number>>({})
+  const refreshRef = useRef<(accountId: string, onlyInbox: boolean) => void>(() => undefined)
   /** 列表上次从服务器更新的时间：窗口被切回来时据此决定要不要悄悄刷新一次 */
   const lastListAt = useRef(Date.now())
   const detailReq = useRef(0)
@@ -459,6 +461,13 @@ export default function App() {
     try {
       const list = await api.folders(accountId)
       setFolders((f) => ({ ...f, [accountId]: list }))
+      // 收件箱封数比上次多了、而列表还没跟上（监听漏报新邮件时就会这样：侧栏有红点，列表却看不到）：自动刷新一次
+      const inbox = list.find((f) => f.specialUse === 'inbox') ?? list.find((f) => f.path === 'INBOX')
+      if (inbox) {
+        const before = inboxTotals.current[accountId]
+        inboxTotals.current[accountId] = inbox.total
+        if (before !== undefined && inbox.total > before) refreshRef.current(accountId, true)
+      }
       setFolderErrors((e) => ({ ...e, [accountId]: undefined }))
     } catch (err) {
       setFolderErrors((e) => ({ ...e, [accountId]: (err as Error).message }))
@@ -2485,6 +2494,8 @@ export default function App() {
     if (onlyInbox && view.folder !== inboxPath(view.accountId)) return
     void loadList(view, '', true)
   }
+
+  refreshRef.current = refreshIfViewing
 
   handlers.current.onNewMail = ({ accountId, notify: n, messages: fresh }) => {
     void loadFolders(accountId)

@@ -525,6 +525,8 @@ export function startWatcher(
             clearTimeout(dead)
             if (w.stopped || w.client !== client) return
             // 服务器的「有新邮件」推送有时不来：问完之后自己看一眼收件箱封数变了没有
+            // 推送和封数都靠不住的邮箱（QQ 实测漏过）：每轮再按 UID 直接问一遍，比已见过的最大编号大的就是新邮件
+            void check()
             const now = client.mailbox ? client.mailbox.exists : w.exists
             if (now !== w.exists) {
               const grew = now > w.exists
