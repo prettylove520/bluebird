@@ -243,6 +243,32 @@ export async function listByUids(account: Account, path: string, uids: number[])
 /**
  * 取一页邮件。before 是上一页里最小的序号，不传则取最新一页。
  */
+/** 整批取列表时被服务器漏掉的邮件：一封一封地取，完整摘要取不到就只取信封，再不行只取编号、标记和日期 */
+async function rescueLost(client: ImapFlow, account: Account, path: string, seqs: number[]): Promise<MessageSummary[]> {
+  const { headers: _headers, ...plain } = SUMMARY_QUERY
+  const queries: object[] = [SUMMARY_QUERY, plain, { uid: true, flags: true, envelope: true, internalDate: true, size: true }, { uid: true, flags: true, internalDate: true }]
+  const out: MessageSummary[] = []
+  for (const seq of seqs.slice(0, 20)) {
+    for (const query of queries) {
+      try {
+        let hit: MessageSummary | undefined
+        for await (const msg of client.fetch(String(seq), query, { uid: false })) {
+          if (msg.seq === seq && msg.uid) hit = toSummary(msg as unknown as FetchedMessage, account.id, path)
+        }
+        if (hit) {
+          if (!hit.subject && query !== SUMMARY_QUERY && query !== plain) hit.subject = '（这封邮件服务器只给了部分信息，点开查看）'
+          out.push(hit)
+          break
+        }
+      } catch (err) {
+        if (!client.usable) return out
+        console.warn(`[列表] ${account.email} 补取序号 ${seq} 失败`, (err as Error).message)
+      }
+    }
+  }
+  return out
+}
+
 /** 分类规则或「重要联系人」变了，缓存里的分类就不能再直接沿用 */
 const CLASSIFY_SIG_VERSION = 1
 function classifySig(): string {
@@ -316,6 +342,20 @@ export async function listMessages(
       messages = await collectReusing(client, account, path, start, end, known.messages)
     }
     messages ??= await collect(client, account, path, `${start}:${end}`, false)
+    // 个别邮件服务器（QQ 邮箱实测）整批取的时候会悄悄漏掉某一封——往往正好是那封没读的新邮件，
+    // 侧栏有未读红点、列表里却怎么也找不到。少了的那几封单独再取，取不到完整的就退一步只取最基本的信息
+    if (messages.length < end - start + 1) {
+      const got = new Set(messages.map((m) => m.seq))
+      const lost: number[] = []
+      for (let seq = start; seq <= end; seq++) if (!got.has(seq)) lost.push(seq)
+      const rescued = await rescueLost(client, account, path, lost)
+      const lostNote = `${lost.join(',')}/${rescued.length}`
+      if (listNotes.get(account.id + path + '#lost') !== lostNote) {
+        listNotes.set(account.id + path + '#lost', lostNote)
+        console.warn(`[列表] ${account.email} ${path}：服务器整批返回时漏了序号 ${lost.join(',')}，单独补取到 ${rescued.length} 封`)
+      }
+      messages.push(...rescued)
+    }
     messages.sort((a, b) => b.seq - a.seq)
     // 记一笔：服务器说这个文件夹有多少封，这次实际取回多少封（邮件显示得少时靠它判断是服务器没给，还是界面筛掉了）
     const note = `${exists}/${messages.length}/${start}-${end}`
