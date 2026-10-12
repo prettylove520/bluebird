@@ -51,7 +51,7 @@ import type { AiRequest } from '../shared/ai'
 import { checkForUpdate, checkIfStale, downloadUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
 import { ICON_PNG_BASE64 } from './icon'
-import { dropClient, startWatcher, stopAll, stopWatcher } from './mail/imap'
+import { dropClient, isConnecting, startWatcher, stopAll, stopWatcher } from './mail/imap'
 import {
   archiveMessage,
   deleteMessage,
@@ -1039,9 +1039,15 @@ function registerIpc(): void {
         detail = await tryGet(15000)
       } catch (first) {
         if (!(first as { slow?: boolean }).slow) throw first
-        console.warn(`[打开邮件] ${account.email} 15 秒没有回应，断开重连后再试一次`)
-        dropClient(account.id)
-        detail = await tryGet(40000)
+        if (isConnecting(account.id)) {
+          // 还在排队连接（刚唤醒、很多邮箱同时在连）：连接是慢，不是断了，推倒重来只会重新排队，接着等
+          console.warn(`[打开邮件] ${account.email} 15 秒还在等连接，继续等`)
+          detail = await tryGet(60000)
+        } else {
+          console.warn(`[打开邮件] ${account.email} 15 秒没有回应，断开重连后再试一次`)
+          dropClient(account.id)
+          detail = await tryGet(40000)
+        }
       }
     } catch (err) {
       // 没连上服务器：旧缓存虽然没有退订信息，正文还是能看的

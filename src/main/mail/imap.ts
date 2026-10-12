@@ -122,22 +122,29 @@ export type Lane = 'main' | 'bg'
 const connKey = (accountId: string, lane: Lane): string => (lane === 'bg' ? `${accountId}#bg` : accountId)
 
 async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Promise<ImapFlow> {
-  const make = async (): Promise<ImapFlow> => {
+  const make = async (onStart?: () => void): Promise<ImapFlow> => {
     const client = new ImapFlow(await buildImapOptions(account))
     // 一定要监听 error，否则断线时会让整个主进程崩溃
     client.on('error', (err: Error) => console.warn(`[imap ${account.email}]`, err.message))
     // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断。用户正等着的排在前面
     const started = Date.now()
-    await (account.useProxy ? withProxySlot(() => client.connect(), lane === 'main' ? 0 : lane === 'bg' ? 1 : 2) : client.connect())
+    await (account.useProxy
+      ? withProxySlot(() => {
+          onStart?.()
+          return client.connect()
+        }, lane === 'main' ? 0 : lane === 'bg' ? 1 : 2)
+      : (onStart?.(), client.connect()))
     const took = Date.now() - started
     if (took > 2000) console.warn(`[慢] 连上 ${account.email}（${lane}）用了 ${(took / 1000).toFixed(1)} 秒${account.useProxy ? '，走代理' : ''}`)
     return client
   }
   // 睡眠唤醒、换网络之后，偶尔有一条连接会卡在握手上半分钟以上（日志里见过 37 秒），而同一时刻新开一条两三秒就通。
   // 所以等一小会儿还没连上，就同时再开一条，谁先通用谁，另一条关掉
-  const wait = lane === 'main' ? 8000 : 15000
+  // 只给用户正等着的 main 连接做，而且从「真正开始连」起算——排队等位置的时间不算，否则一排队就多开一条，反而把代理压得更慢
   const connectOnce = (): Promise<ImapFlow> =>
-    hedge(make, wait, () => console.warn(`[慢] ${account.email}（${lane}）${wait / 1000} 秒还没连上，同时再开一条试试`))
+    lane === 'main'
+      ? hedge(make, 10000, () => console.warn(`[慢] ${account.email}（${lane}）连了 10 秒还没连上，同时再开一条试试`))
+      : make()
   try {
     return await connectOnce()
   } catch (err) {
@@ -151,15 +158,23 @@ async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Prom
 }
 
 /** 先跑一次；after 毫秒后还没结果就再并行跑一次，先成功的算数，晚到的连接关掉。都失败才报第一个错 */
-function hedge(make: () => Promise<ImapFlow>, after: number, onHedge: () => void): Promise<ImapFlow> {
+function hedge(make: (onStart?: () => void) => Promise<ImapFlow>, after: number, onHedge: () => void): Promise<ImapFlow> {
   return new Promise((resolve, reject) => {
     let done = false
     let running = 0
     let firstErr: unknown
     let timer: ReturnType<typeof setTimeout> | undefined
-    const run = (): void => {
+    let hedged = false
+    const run = (first: boolean): void => {
       running++
-      make().then(
+      make(first ? () => {
+        timer = setTimeout(() => {
+          if (done || hedged) return
+          hedged = true
+          onHedge()
+          run(false)
+        }, after)
+      } : undefined).then(
         (client) => {
           if (done) {
             closeQuietly(client)
@@ -180,12 +195,7 @@ function hedge(make: () => Promise<ImapFlow>, after: number, onHedge: () => void
         }
       )
     }
-    run()
-    timer = setTimeout(() => {
-      if (done) return
-      onHedge()
-      run()
-    }, after)
+    run(true)
   })
 }
 
@@ -220,6 +230,11 @@ export async function getClient(account: Account, lane: Lane = 'main'): Promise<
     })
   conn.connecting = attempt
   return attempt
+}
+
+/** 这个账号的操作连接是不是正在连（排队等位置、握手中）。正在连的不要因为「请求超时」就推倒重来 */
+export function isConnecting(accountId: string): boolean {
+  return !!conns.get(accountId)?.connecting || !!conns.get(connKey(accountId, 'bg'))?.connecting
 }
 
 /**
