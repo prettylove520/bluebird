@@ -105,7 +105,51 @@ img,video,picture,svg,[background],[style*="background-image"],[style*="backgrou
 `
 
 /** 去掉邮件 HTML 里会自动跳转或执行的东西（iframe 本身已禁用脚本，这里再加一层保险） */
+/**
+ * HTML 邮件里经常把网址直接写成文字（验证邮件、通知邮件尤其多），没有做成链接，点不了。
+ * 把正文里不在链接、脚本、样式里的网址补成可点的链接。用 template 解析：内容是惰性的，不会加载图片、不会执行脚本。
+ */
+function linkifyHtml(html: string): string {
+  if (!/https?:\/\//i.test(html)) return html
+  const tpl = document.createElement('template')
+  tpl.innerHTML = html
+  const walker = document.createTreeWalker(tpl.content, NodeFilter.SHOW_TEXT)
+  const hits: Text[] = []
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    const t = n as Text
+    if (!/https?:\/\//i.test(t.data)) continue
+    if (t.parentElement?.closest('a,script,style,textarea,title')) continue
+    hits.push(t)
+  }
+  if (!hits.length) return html
+  const re = /https?:\/\/[^\s<>"'\u3000-\u303f\uff00-\uffef]+/g
+  for (const t of hits) {
+    const frag = document.createDocumentFragment()
+    let last = 0
+    for (const m of t.data.matchAll(re)) {
+      // 句末的标点不算网址的一部分
+      const url = m[0].replace(/[.,;:!?)\]}，。；：！？）】]+$/, '')
+      if (url.length < 9) continue
+      const at = m.index ?? 0
+      if (at > last) frag.append(t.data.slice(last, at))
+      const a = document.createElement('a')
+      a.href = url
+      a.textContent = url
+      frag.append(a)
+      last = at + url.length
+    }
+    if (!last) continue
+    if (last < t.data.length) frag.append(t.data.slice(last))
+    t.replaceWith(frag)
+  }
+  return tpl.innerHTML
+}
+
 function stripDangerous(html: string): string {
+  return linkifyHtml(stripDangerousRaw(html))
+}
+
+function stripDangerousRaw(html: string): string {
   return html
     .replace(/<script[\s\S]*?<\/script\s*>/gi, '')
     .replace(/<meta[^>]+http-equiv\s*=\s*["']?refresh[^>]*>/gi, '')
