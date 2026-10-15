@@ -123,11 +123,12 @@ const connKey = (accountId: string, lane: Lane): string => (lane === 'bg' ? `${a
 
 async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Promise<ImapFlow> {
   const make = async (onStart?: () => void): Promise<ImapFlow> => {
+    // 从取登录令牌开始算：令牌过期要先去 Google 换新的，这段时间也算在「连上用了多久」里
+    const started = Date.now()
     const client = new ImapFlow(await buildImapOptions(account))
     // 一定要监听 error，否则断线时会让整个主进程崩溃
     client.on('error', (err: Error) => console.warn(`[imap ${account.email}]`, err.message))
     // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断。用户正等着的排在前面
-    const started = Date.now()
     await (account.useProxy
       ? withProxySlot(() => {
           onStart?.()

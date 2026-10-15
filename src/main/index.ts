@@ -40,7 +40,7 @@ import {
 import { appendFileSync, existsSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'fs'
 import { addOAuthAccount, addPasswordAccount, listPresets, reauthAccount, removeAccount, updateAccount, type AccountPatch } from './accounts'
 import { detect } from './presets'
-import { cancelOAuth } from './oauth'
+import { cancelOAuth, getAccessToken } from './oauth'
 import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy } from './net'
@@ -1517,6 +1517,7 @@ function registerIpc(): void {
 // ---------------- 启动 ----------------
 
 app.whenReady().then(() => {
+  console.warn(`[启动] Bluebird ${app.getVersion()} 启动`)
   if (!gotLock) return
   setupFileLog()
   initBackup()
@@ -1571,13 +1572,35 @@ app.whenReady().then(() => {
   }, 15000)
 
   // 电脑睡眠唤醒后，旧连接基本都断了，全部重建
+  powerMonitor.on('suspend', () => console.warn('[电源] 电脑进入睡眠'))
+  let resumeRun = 0
   powerMonitor.on('resume', () => {
-    // 刚醒来时网络（尤其是 DNS、代理）常常还没恢复，马上重连只会一片报错；等几秒再统一重建
-    setTimeout(() => {
+    const run = ++resumeRun
+    const woke = Date.now()
+    console.warn('[电源] 电脑唤醒，等网络恢复后重新连接邮箱')
+    // 刚醒来时网络（尤其是 DNS、代理）常常还没恢复，马上重连只会一片报错。
+    // 以前固定等 4 秒；现在每半秒探一次，域名能解析了就马上重连（最少等 1 秒，最多 10 秒）
+    void (async () => {
+      await new Promise((r) => setTimeout(r, 1000))
+      const host = getAccounts().find((a) => !a.useProxy)?.imap.host || 'imap.gmail.com'
+      while (Date.now() - woke < 10000) {
+        const ok = await Promise.race([
+          lookup(host).then(() => true, () => false),
+          new Promise<boolean>((r) => setTimeout(() => r(false), 1500))
+        ])
+        if (ok) break
+        await new Promise((r) => setTimeout(r, 500))
+      }
+      if (run !== resumeRun) return
+      console.warn(`[电源] 唤醒 ${((Date.now() - woke) / 1000).toFixed(1)} 秒后网络就绪，开始重连`)
       for (const a of getAccounts()) dropClient(a.id)
       watchAll()
+      // OAuth 令牌睡一晚早过期了：趁连接排队的时候先把令牌刷新好，不用等轮到连接时再去换
+      for (const a of getAccounts()) {
+        if (a.auth.type === 'oauth2' && a.auth.oauthProvider) void getAccessToken(a.id, a.auth.oauthProvider).catch(() => undefined)
+      }
       send('mail:changed', { accountId: '*' })
-    }, 4000)
+    })()
   })
 })
 
