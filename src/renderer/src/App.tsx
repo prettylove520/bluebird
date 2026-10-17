@@ -185,6 +185,9 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [presets, setPresets] = useState<Preset[]>([])
   const [folders, setFolders] = useState<Record<string, Folder[] | undefined>>({})
+  const foldersRef = useRef(folders)
+  foldersRef.current = folders
+  const unseenAsked = useRef<Record<string, string>>({})
   const [folderErrors, setFolderErrors] = useState<Record<string, string | undefined>>({})
   const [view, setView] = useState<View | null>(null)
   const [messages, setMessages] = useState<MessageSummary[]>([])
@@ -469,6 +472,8 @@ export default function App() {
         inboxTotals.current[accountId] = inbox.total
         if (before !== undefined && inbox.total > before) refreshRef.current(accountId, true)
       }
+      // 等新的未读数写进界面状态再看（setFolders 要到下一次渲染才生效）
+      setTimeout(() => viewExtrasRef.current(), 50)
       setFolderErrors((e) => ({ ...e, [accountId]: undefined }))
     } catch (err) {
       setFolderErrors((e) => ({ ...e, [accountId]: (err as Error).message }))
@@ -591,6 +596,41 @@ export default function App() {
     }
   }
 
+  /**
+   * 没读的邮件可能比较旧，不在最新一页里：服务器说这个文件夹有几封没读，列表里却没那么多，
+   * 就单独问一次服务器要所有没读的，补进列表（否则侧栏有红点，列表里怎么也找不到）
+   */
+  const loadUnseenExtras = async (v: View, have: MessageSummary[], reqId: number): Promise<void> => {
+    const targets = v.accountId === ALL ? (UNIFIED_USE[v.folder] ? [] : unifiedTargets(v.folder)) : [v]
+    const jobs: Promise<MessageSummary[]>[] = []
+    for (const t of targets) {
+      const f = foldersRef.current[t.accountId]?.find((x) => x.path === t.folder)
+      if (!f?.unseen) continue
+      const mine = have.filter((m) => m.accountId === t.accountId && m.folder === t.folder)
+      if (mine.filter((m) => !m.seen).length >= f.unseen) continue
+      const askKey = `${t.accountId}|${t.folder}`
+      // 同一次列表加载里、同一个未读数只问一遍（后台定时刷新不会反复去问）；换了视图或手动刷新会重新问
+      const mark = `${f.unseen}|${reqId}`
+      if (unseenAsked.current[askKey] === mark) continue
+      unseenAsked.current[askKey] = mark
+      jobs.push(api.unseen(t.accountId, t.folder, mine.map((m) => m.uid)))
+    }
+    if (!jobs.length) return
+    const extras = (await Promise.allSettled(jobs)).flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    if (reqId !== listReq.current || !extras.length) return
+    setMessages((prev) => {
+      const seen = new Set(prev.map(keyOf))
+      const add = extras.filter((m) => !seen.has(keyOf(m)))
+      if (!add.length) return prev
+      const next = [...prev, ...add]
+      return v.accountId === ALL ? next.sort(byDateDesc) : next.sort((a, b) => b.seq - a.seq)
+    })
+  }
+  const viewExtrasRef = useRef<() => void>(() => undefined)
+  viewExtrasRef.current = () => {
+    if (view && !activeQuery && !isVirtual(view.accountId) && messages.length) void loadUnseenExtras(view, messages, listReq.current)
+  }
+
   /** 置顶的邮件可能比较旧，不在最新一页里，单独取回来放进列表 */
   const loadPinnedExtras = async (v: View, have: MessageSummary[], reqId: number): Promise<void> => {
     const haveKeys = new Set(have.map(keyOf))
@@ -701,7 +741,10 @@ export default function App() {
       }
       setTotal(page.total)
       lastListAt.current = Date.now()
-      if (!q && !isVirtual(v.accountId)) void loadPinnedExtras(v, page.messages, id)
+      if (!q && !isVirtual(v.accountId)) {
+        void loadPinnedExtras(v, page.messages, id)
+        void loadUnseenExtras(v, page.messages, id)
+      }
       const want = pendingOpen.current
       if (want) {
         pendingOpen.current = null

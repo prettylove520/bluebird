@@ -234,6 +234,24 @@ export function summarizeUids(client: ImapFlow, account: Account, path: string, 
   return uids.length ? collect(client, account, path, uids, true) : Promise.resolve([])
 }
 
+/**
+ * 取这个文件夹里所有没读的邮件（最多最近 50 封）。
+ * 列表只取最新一页，比这一页还旧的未读邮件不会出现，侧栏却把它算进了红点——有红点找不到邮件。单独问一次服务器补上
+ */
+export async function listUnseen(account: Account, path: string, skip: number[] = []): Promise<MessageSummary[]> {
+  return withMailbox(
+    account,
+    path,
+    async (client) => {
+      const found = await client.search({ seen: false }, { uid: true })
+      const have = new Set(skip)
+      const uids = (Array.isArray(found) ? found : []).filter((u) => !have.has(u)).sort((a, b) => b - a).slice(0, 50)
+      return uids.length ? collect(client, account, path, uids, true) : []
+    },
+    'bg'
+  )
+}
+
 /** 按 UID 取指定的几封邮件（置顶和推迟的邮件不一定在最新一页里） */
 export async function listByUids(account: Account, path: string, uids: number[]): Promise<MessageSummary[]> {
   if (!uids.length) return []

@@ -70,6 +70,7 @@ import {
   deleteFolder,
   forgetAccount,
   listByUids,
+  listUnseen,
   listFolders,
   emptyFolder,
   listMessages,
@@ -900,6 +901,7 @@ function registerIpc(): void {
     if (failed?.error) throw new Error(failed.error)
     return getData()
   })
+  handle('mail:unseen', (accountId: string, folder: string, skip: number[]) => listUnseen(need(accountId), folder, Array.isArray(skip) ? skip : []))
   handle('mail:listByUids', (accountId: string, folder: string, uids: number[]) => listByUids(need(accountId), folder, uids))
 
 

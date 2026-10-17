@@ -32,6 +32,7 @@ const api = {
   prefetch: invoke('mail:prefetch'),
   previews: invoke('mail:previews'),
   listByUids: invoke('mail:listByUids'),
+  unseen: invoke('mail:unseen'),
   cachedList: invoke('cache:list'),
   cacheInfo: invoke('cache:info'),
   cacheClear: invoke('cache:clear'),
