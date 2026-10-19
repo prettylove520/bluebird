@@ -93,11 +93,22 @@ function keepAlive(account: Account, client: ImapFlow, lane: Lane): void {
     if (!client.usable || a.busy > 0 || Date.now() - a.last < 55000) return
     a.busy++
     const dead = setTimeout(() => {
-      console.warn(`[保活] ${account.email}（${lane}）连接没有回应，已断开，下次用时重连`)
+      // main 连接是打开邮件用的：断了马上在后台重连好，不等用户点开邮件时才去连（那时要多等好几秒，走代理还可能十几秒）
+      const key = connKey(account.id, lane)
+      const gen = conns.get(key)?.gen
+      console.warn(`[保活] ${account.email}（${lane}）连接没有回应，已断开${lane === 'main' ? '，马上在后台重连' : '，下次用时重连'}`)
       try {
         client.close()
       } catch {
         // 已经断了
+      }
+      if (lane === 'main') {
+        setTimeout(() => {
+          // 这期间账号被删了、改了设置、电脑睡了（会主动断开、gen 会变）就不要再连
+          const c = conns.get(key)
+          if (!c || c.gen !== gen || c.client?.usable || c.connecting) return
+          void getClient(account, 'main').catch((err) => console.warn(`[保活] ${account.email}（main）后台重连失败`, (err as Error).message))
+        }, 1500)
       }
     }, 8000)
     client
@@ -144,7 +155,7 @@ async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Prom
   // 只给用户正等着的 main 连接做，而且从「真正开始连」起算——排队等位置的时间不算，否则一排队就多开一条，反而把代理压得更慢
   const connectOnce = (): Promise<ImapFlow> =>
     lane === 'main'
-      ? hedge(make, 10000, () => console.warn(`[慢] ${account.email}（${lane}）连了 10 秒还没连上，同时再开一条试试`))
+      ? hedge(make, 6000, () => console.warn(`[慢] ${account.email}（${lane}）连了 6 秒还没连上，同时再开一条试试`))
       : make()
   try {
     return await connectOnce()
