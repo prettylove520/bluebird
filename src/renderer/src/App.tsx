@@ -226,6 +226,7 @@ export default function App() {
   const [freshKeys, setFreshKeys] = useState<Set<string>>(new Set())
   // 刚到的新邮件：在列表里高亮几秒，折叠条上也标出「+N 新」
   const [arrived, setArrived] = useState<Set<string>>(new Set())
+  const [fresh, setFresh] = useState<Set<string>>(new Set())
   const seenKeys = useRef<{ view: string; keys: Set<string> }>({ view: '', keys: new Set() })
   useEffect(() => {
     const vk = view ? `${view.accountId}|${view.folder}` : ''
@@ -236,6 +237,7 @@ export default function App() {
     const add = messages.filter((m) => !prev.keys.has(keyOf(m)) && !m.seen && Date.now() - Date.parse(m.date) < 30 * 60 * 1000).map(keyOf)
     if (!add.length) return
     setArrived((a) => new Set([...a, ...add]))
+    setFresh((f) => new Set([...f, ...add]))
     setTimeout(
       () =>
         setArrived((a) => {
@@ -2852,6 +2854,30 @@ export default function App() {
   }
 
   // ---------- 渲染 ----------
+  // 任务栏图标上挂一个红色未读数，窗口缩小了也看得见
+  const allUnseen = accounts.reduce((sum, a) => sum + (folders[a.id]?.find((f) => f.specialUse === 'inbox')?.unseen ?? 0), 0)
+  useEffect(() => {
+    let url = ''
+    if (allUnseen > 0) {
+      const c = document.createElement('canvas')
+      c.width = c.height = 32
+      const g = c.getContext('2d')
+      if (g) {
+        g.fillStyle = '#e5484d'
+        g.beginPath()
+        g.arc(16, 16, 15, 0, Math.PI * 2)
+        g.fill()
+        g.fillStyle = '#fff'
+        const text = allUnseen > 99 ? '99+' : String(allUnseen)
+        g.font = `bold ${text.length > 2 ? 13 : text.length > 1 ? 17 : 20}px "Segoe UI", sans-serif`
+        g.textAlign = 'center'
+        g.textBaseline = 'middle'
+        g.fillText(text, 16, 17)
+        url = c.toDataURL('image/png')
+      }
+    }
+    void api.badge(url, allUnseen).catch(() => undefined)
+  }, [allUnseen])
   if (startError) {
     return <div className="boot error">启动失败：{startError}</div>
   }
@@ -3279,6 +3305,7 @@ export default function App() {
             wide={wide}
             bundles={bundles}
             arrived={arrived}
+            fresh={fresh}
             smart={inboxView && !activeQuery ? !!settings.reading.smartInbox : undefined}
             onToggleSmart={toggleSmart}
             onBundleRead={(cat) => {

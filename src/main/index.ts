@@ -952,6 +952,16 @@ function registerIpc(): void {
   handle('proxy:test', (proxy: ProxySettings) => testProxy(proxy))
   handle('proxy:detect', () => detectProxy())
 
+  // 任务栏图标右下角的未读数小红点（Windows）；托盘提示里也写上
+  handle('app:badge', (dataUrl: string, count: number) => {
+    const n = Math.max(0, Math.floor(Number(count) || 0))
+    if (win && !win.isDestroyed()) {
+      const img = n && typeof dataUrl === 'string' && dataUrl.startsWith('data:image/png;base64,') ? nativeImage.createFromDataURL(dataUrl) : null
+      win.setOverlayIcon(img, n ? `${n} 封未读` : '')
+    }
+    tray?.setToolTip(n ? `Bluebird Mail · ${n} 封未读` : 'Bluebird Mail')
+    return true
+  })
   handle('app:openDataDir', async () => {
     const err = await shell.openPath(dataDir())
     if (err) throw new Error(err)

@@ -167,6 +167,7 @@ export const api = {
   testProxy: (p: ProxySettings) => call<{ ms: number; kind: 'socks5' | 'http' }>('testProxy', p),
   detectProxy: () => call<{ host: string; port: number; kind: 'socks5' | 'http'; source: 'system' | 'scan' } | null>('detectProxy'),
   openDataDir: () => call<boolean>('openDataDir'),
+  badge: (dataUrl: string, count: number) => call<boolean>('badge', dataUrl, count),
 
   onNewMail: (cb: (e: NewMailEvent) => void) => listen<NewMailEvent>('onNewMail', cb),
   onChanged: (cb: (e: { accountId: string }) => void) => listen<{ accountId: string }>('onChanged', cb),

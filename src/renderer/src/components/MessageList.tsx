@@ -63,6 +63,8 @@ interface Props {
   bundles: Bundle[]
   /** 刚到的新邮件（几秒后自动撤掉），列表里给它们高亮 */
   arrived: Set<string>
+  /** 这次打开程序以后新到、还没读的邮件：行首挂一个「新」字，读了才消失 */
+  fresh: Set<string>
   /** 智能收件箱的开关状态；不是收件箱时不传，开关就不显示 */
   smart?: boolean
   onToggleSmart: () => void
@@ -144,6 +146,7 @@ interface RowProps {
   selected: boolean
   isChecked: boolean
   arrived: boolean
+  isNew: boolean
   selecting: boolean
   canArchive: boolean
   h: RowHandlers
@@ -165,7 +168,7 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
         role="option"
         tabIndex={r.selected ? 0 : -1}
         aria-selected={r.selected || r.isChecked}
-        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''} ${r.arrived ? 'arrived' : ''}`}
+        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''} ${r.arrived ? 'arrived' : ''} ${r.isNew ? 'new' : ''}`}
         onClick={(e) => h.select(m, e)}
         onMouseEnter={() => {
           setHot(true)
@@ -199,6 +202,7 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
         <span className="msg-main">
           <span className="msg-row">
             <span className={`msg-from ${r.vip ? 'vip' : ''}`} title={r.vip ? '重要发件人' : undefined}>
+              {r.isNew && <span className="new-tag">新</span>}
               <span className="from-text">{r.name}</span>
               {r.threadCount > 0 && (
                 <span className="thread-count" title={`这个会话里有 ${r.threadCount} 封邮件`}>
@@ -705,6 +709,7 @@ export function MessageList(props: Props) {
               selected={selectedKey === k}
               isChecked={checked.has(k)}
               arrived={props.arrived.has(k)}
+              isNew={(thread ? thread.unread : !m.seen) && props.fresh.has(k)}
               selecting={selecting}
               canArchive={props.canArchive(m)}
               h={rowHandlers}

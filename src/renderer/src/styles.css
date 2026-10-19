@@ -5040,3 +5040,71 @@ html[data-motion='off'] *::after {
   font-weight: 700;
   letter-spacing: 0.2px;
 }
+
+/* ---------- 未读和新邮件更醒目（1.0.23） ---------- */
+/* 未读：整行淡淡的主题色底 + 左边一条主题色竖线 + 更大的圆点；已读的行文字放淡，两者一眼能分开 */
+.list .msg.unread {
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.list .msg.unread:hover {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-hover));
+}
+.list .msg.unread.selected {
+  background: var(--select);
+}
+.msg.unread .unread-dot {
+  width: 9px;
+  height: 9px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+}
+/* 宽列表里头像紧挨着左边，圆点会压到头像上；有左边竖线和底色就够了，圆点不画 */
+.list-pane.wide .msg .unread-dot {
+  display: none;
+}
+.list-pane.wide .msg.unread .msg-from,
+.list-pane.wide .msg.unread .msg-subject {
+  font-weight: 700;
+  color: var(--ink);
+}
+.list-pane.wide .msg:not(.unread) .msg-from,
+.list-pane.wide .msg:not(.unread) .msg-subject {
+  font-weight: 400;
+  color: var(--ink-2);
+}
+.list .msg:not(.unread) .msg-preview {
+  opacity: 0.8;
+}
+
+/* 新到的（这次打开程序后收到、还没读）：行首一个「新」字，底色更深，读了才消失 */
+.list .msg.new {
+  background: color-mix(in srgb, var(--accent) 13%, transparent);
+}
+.new-tag {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  margin-right: 6px;
+  padding: 0 6px;
+  height: 18px;
+  border-radius: 6px;
+  background: #e5484d;
+  color: #fff;
+  font-size: 11.5px;
+  font-weight: 700;
+  line-height: 1;
+  vertical-align: 1px;
+}
+.msg.new .unread-dot {
+  background: #e5484d;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #e5484d 25%, transparent);
+  animation: bb-new-dot 1.6s ease-in-out 4;
+}
+@keyframes bb-new-dot {
+  50% {
+    box-shadow: 0 0 0 6px color-mix(in srgb, #e5484d 0%, transparent);
+  }
+}
+html[data-motion='off'] .msg.new .unread-dot {
+  animation: none;
+}
