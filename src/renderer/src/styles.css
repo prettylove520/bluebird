@@ -115,6 +115,13 @@ select {
   min-width: 0;
 }
 
+/* 下拉列表的选项：深色模式下原生弹层是白底，文字继承浅色会看不见 */
+select option,
+select optgroup {
+  background-color: var(--bg-reader);
+  color: var(--ink);
+}
+
 input:focus,
 select:focus,
 textarea:focus {
