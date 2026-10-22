@@ -1529,9 +1529,10 @@ function registerIpc(): void {
 // ---------------- 启动 ----------------
 
 app.whenReady().then(() => {
-  console.warn(`[启动] Bluebird ${app.getVersion()} 启动`)
   if (!gotLock) return
   setupFileLog()
+  // 要在日志文件接好之后再写，不然这一行进不了 bluebird.log
+  console.warn(`[启动] Bluebird ${app.getVersion()} 启动`)
   initBackup()
   // Windows 靠这个标识决定通知归谁。安装版用固定的标识（和开始菜单里的快捷方式对应）；
   // 没安装、直接运行的开发版没有快捷方式，用固定标识的话系统会把通知悄悄丢掉，所以改用程序自己的路径
@@ -1586,10 +1587,10 @@ app.whenReady().then(() => {
   // 电脑睡眠唤醒后，旧连接基本都断了，全部重建
   powerMonitor.on('suspend', () => console.warn('[电源] 电脑进入睡眠'))
   let resumeRun = 0
-  powerMonitor.on('resume', () => {
+  const onResume = (why: string): void => {
     const run = ++resumeRun
     const woke = Date.now()
-    console.warn('[电源] 电脑唤醒，等网络恢复后重新连接邮箱')
+    console.warn(`[电源] ${why}，等网络恢复后重新连接邮箱`)
     // 刚醒来时网络（尤其是 DNS、代理）常常还没恢复，马上重连只会一片报错。
     // 以前固定等 4 秒；现在每半秒探一次，域名能解析了就马上重连（最少等 1 秒，最多 10 秒）
     void (async () => {
@@ -1613,7 +1614,18 @@ app.whenReady().then(() => {
       }
       send('mail:changed', { accountId: '*' })
     })()
-  })
+  }
+  powerMonitor.on('resume', () => onResume('电脑唤醒'))
+  // Windows 的「现代待机」（关屏后的低功耗状态）不一定发睡眠/唤醒通知，但会把程序整个冻住：
+  // 这段时间里既不收信也不检查连接，醒来后要等每条连接自己超时才重连，新邮件就晚了好几分钟。
+  // 用一个每 5 秒跳一次的心跳来发现「程序被暂停过」：两次心跳隔了 30 秒以上，就当作刚唤醒，马上全部重连
+  let beat = Date.now()
+  setInterval(() => {
+    const now = Date.now()
+    const gap = now - beat
+    beat = now
+    if (gap > 30000) onResume(`程序被系统暂停了 ${Math.round(gap / 1000)} 秒（关屏待机），刚恢复`)
+  }, 5000)
 })
 
 app.on('window-all-closed', () => {
