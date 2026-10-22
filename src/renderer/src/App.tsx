@@ -188,6 +188,13 @@ export default function App() {
   const foldersRef = useRef(folders)
   foldersRef.current = folders
   const unseenAsked = useRef<Record<string, string>>({})
+  /** 核对后更正过的未读数：服务器还报 server 封时，按 real 封显示 */
+  const unseenFix = useRef<Record<string, { server: number; real: number }>>({})
+  const fixUnseen = (accountId: string, list: Folder[]): Folder[] =>
+    list.map((f) => {
+      const x = unseenFix.current[`${accountId}|${f.path}`]
+      return x && x.server === f.unseen ? { ...f, unseen: x.real } : f
+    })
   const [folderErrors, setFolderErrors] = useState<Record<string, string | undefined>>({})
   const [view, setView] = useState<View | null>(null)
   const [messages, setMessages] = useState<MessageSummary[]>([])
@@ -465,7 +472,7 @@ export default function App() {
 
   const loadFolders = async (accountId: string): Promise<void> => {
     try {
-      const list = await api.folders(accountId)
+      const list = fixUnseen(accountId, await api.folders(accountId))
       setFolders((f) => ({ ...f, [accountId]: list }))
       // 收件箱封数比上次多了、而列表还没跟上（监听漏报新邮件时就会这样：侧栏有红点，列表却看不到）：自动刷新一次
       const inbox = list.find((f) => f.specialUse === 'inbox') ?? list.find((f) => f.path === 'INBOX')
@@ -604,21 +611,40 @@ export default function App() {
    */
   const loadUnseenExtras = async (v: View, have: MessageSummary[], reqId: number): Promise<void> => {
     const targets = v.accountId === ALL ? (UNIFIED_USE[v.folder] ? [] : unifiedTargets(v.folder)) : [v]
-    const jobs: Promise<MessageSummary[]>[] = []
+    const jobs: Promise<void>[] = []
+    const extras: MessageSummary[] = []
     for (const t of targets) {
       const f = foldersRef.current[t.accountId]?.find((x) => x.path === t.folder)
       if (!f?.unseen) continue
       const mine = have.filter((m) => m.accountId === t.accountId && m.folder === t.folder)
-      if (mine.filter((m) => !m.seen).length >= f.unseen) continue
+      const mineUnseen = mine.filter((m) => !m.seen).length
+      if (mineUnseen >= f.unseen) continue
       const askKey = `${t.accountId}|${t.folder}`
       // 同一次列表加载里、同一个未读数只问一遍（后台定时刷新不会反复去问）；换了视图或手动刷新会重新问
       const mark = `${f.unseen}|${reqId}`
       if (unseenAsked.current[askKey] === mark) continue
       unseenAsked.current[askKey] = mark
-      jobs.push(api.unseen(t.accountId, t.folder, mine.map((m) => m.uid)))
+      const server = f.unseen
+      jobs.push(
+        api.unseen(t.accountId, t.folder, mine.map((m) => m.uid)).then(
+          (found) => {
+            extras.push(...found)
+            // 服务器说的未读数比真正找得到的多（打了删除标记的、服务器自己算错的）：红点按找得到的算，
+            // 保证「有红点就一定能在列表里看到那封邮件」。服务器的数目一变，这个更正就自动作废、重新核对
+            if (found.length < 50 && mineUnseen + found.length < server) {
+              unseenFix.current[askKey] = { server, real: mineUnseen + found.length }
+              setFolders((prev) => ({ ...prev, [t.accountId]: prev[t.accountId] && fixUnseen(t.accountId, prev[t.accountId]!) }))
+            }
+          },
+          () => {
+            // 这次没问成（断网、连接超时）：清掉记号，下一次刷新再问，不能就此放弃
+            if (unseenAsked.current[askKey] === mark) delete unseenAsked.current[askKey]
+          }
+        )
+      )
     }
     if (!jobs.length) return
-    const extras = (await Promise.allSettled(jobs)).flatMap((r) => (r.status === 'fulfilled' ? r.value : []))
+    await Promise.all(jobs)
     if (reqId !== listReq.current || !extras.length) return
     setMessages((prev) => {
       const seen = new Set(prev.map(keyOf))
@@ -2030,7 +2056,7 @@ export default function App() {
   // ---------- 文件夹：新建、改名、删除 ----------
 
   const applyFolders = (accountId: string, list: Folder[]): void => {
-    setFolders((f) => ({ ...f, [accountId]: list }))
+    setFolders((f) => ({ ...f, [accountId]: fixUnseen(accountId, list) }))
   }
   const promptNewFolder = (accountId: string, parent?: Folder): void => {
     setPrompt({

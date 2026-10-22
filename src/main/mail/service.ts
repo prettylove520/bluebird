@@ -22,6 +22,8 @@ import { getData } from '../userdata'
 import { loadPreviews, savePreviews } from '../cache'
 
 const PAGE_SIZE = 50
+/** 核对未读时逐封看标记的最大封数 */
+const UNSEEN_SCAN = 3000
 /** 每个文件夹上一次记进日志的取信情况（没变就不重复记） */
 const listNotes = new Map<string, string>()
 
@@ -243,10 +245,65 @@ export async function listUnseen(account: Account, path: string, skip: number[] 
     account,
     path,
     async (client) => {
-      const found = await client.search({ seen: false }, { uid: true })
+      // 1) 先按服务器的搜索结果。QQ 的搜索时灵时不灵（日志里多次「一次问完没有结果」），不能只靠它
+      let searched: number[] = []
+      try {
+        const r = await client.search({ seen: false }, { uid: true })
+        if (Array.isArray(r)) searched = r
+      } catch {
+        /* 搜索失败就全靠下面的逐封核对 */
+      }
+      // 2) 再把最近 UNSEEN_SCAN 封的标记逐封取一遍（只取编号和标记，很快），以它为准；
+      //    打了删除标记还没清掉的邮件不算——服务器有时把它算进未读数，列表里却永远不会出现
+      const exists = client.mailbox ? client.mailbox.exists : 0
+      const unseen = new Set<number>()
+      let lowest = Infinity
+      let scanned = false
+      if (exists > 0) {
+        try {
+          const lo = Math.max(1, exists - UNSEEN_SCAN + 1)
+          for await (const msg of client.fetch(`${lo}:*`, { uid: true, flags: true }, { uid: false })) {
+            if (!msg.uid) continue
+            lowest = Math.min(lowest, msg.uid)
+            const flags = msg.flags
+            if (flags?.has('\\Deleted')) continue
+            if (!flags?.has('\\Seen')) unseen.add(msg.uid)
+          }
+          scanned = true
+        } catch (err) {
+          if (!client.usable) throw err
+        }
+      }
+      // 扫描范围以外更旧的，只能信搜索结果
+      for (const u of searched) if (!scanned || u < lowest) unseen.add(u)
+      const note = `${searched.length}/${scanned ? unseen.size : '-'}`
+      if (listNotes.get(account.id + path + '#unseen') !== note) {
+        listNotes.set(account.id + path + '#unseen', note)
+        console.warn(`[未读] ${account.email} ${path}：搜索找到 ${searched.length} 封，逐封核对${scanned ? `找到 ${unseen.size} 封` : '失败'}`)
+      }
       const have = new Set(skip)
-      const uids = (Array.isArray(found) ? found : []).filter((u) => !have.has(u)).sort((a, b) => b - a).slice(0, 50)
-      return uids.length ? collect(client, account, path, uids, true) : []
+      const uids = [...unseen].filter((u) => !have.has(u)).sort((a, b) => b - a).slice(0, 50)
+      if (!uids.length) return []
+      const got = await collect(client, account, path, uids, true)
+      // 3) 整批取摘要时服务器漏掉的（QQ 会这样），一封一封补，补不到完整的就只取信封、日期
+      const gotUids = new Set(got.map((m) => m.uid))
+      const { headers: _headers, ...plain } = SUMMARY_QUERY
+      for (const uid of uids.filter((u) => !gotUids.has(u)).slice(0, 20)) {
+        for (const query of [plain, { uid: true, flags: true, envelope: true, internalDate: true, size: true }, { uid: true, flags: true, internalDate: true }]) {
+          try {
+            const msg = await client.fetchOne(String(uid), query, { uid: true })
+            if (msg && msg.uid === uid) {
+              const hit = toSummary(msg as unknown as FetchedMessage, account.id, path)
+              if (!hit.subject && query !== plain) hit.subject = '（这封邮件服务器只给了部分信息，点开查看）'
+              got.push(hit)
+              break
+            }
+          } catch (err) {
+            if (!client.usable) throw err
+          }
+        }
+      }
+      return got
     },
     'bg'
   )
