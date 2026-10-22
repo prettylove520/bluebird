@@ -61,6 +61,7 @@ declare module 'imapflow' {
     list(options?: { statusQuery?: { messages?: boolean; unseen?: boolean } }): Promise<ListResponse[]>
     getMailboxLock(path: string): Promise<{ release(): void }>
     mailboxOpen(path: string): Promise<unknown>
+    mailboxClose(): Promise<unknown>
     fetch(range: string | number[], query: object, options?: { uid?: boolean }): AsyncIterableIterator<FetchMessageObject>
     fetchOne(range: string, query: object, options?: { uid?: boolean }): Promise<FetchMessageObject | false>
     search(query: object, options?: { uid?: boolean }): Promise<number[] | false>

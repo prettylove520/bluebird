@@ -348,6 +348,20 @@ export async function listMessages(
     // 这条连接之前已经打开过这个文件夹的话，它记的邮件总数可能是旧的（服务器只在回应命令时才告诉新数目），
     // 直接拿来算范围会漏掉刚到的邮件。取最新一页前先 NOOP 一下，让服务器把最新的总数报过来
     if (!before) await client.noop().catch(() => undefined)
+    // QQ 等服务器对 NOOP 不一定报新数目：再用 STATUS 问一次真实总数，对不上就把文件夹关掉重新打开，拿到最新状态
+    if (!before && client.mailbox) {
+      const seen = client.mailbox.exists
+      const real = await client.status(path, { messages: true }).then((r) => r.messages, () => undefined)
+      if (typeof real === 'number' && real !== seen) {
+        try {
+          await client.mailboxClose()
+          await client.mailboxOpen(path)
+          console.warn(`[列表] ${account.email} ${path}：这条连接记的邮件数过期了（${seen}→服务器实际 ${real}），已重新打开文件夹`)
+        } catch {
+          /* 重开失败就按原来的数目继续，外层会处理断线 */
+        }
+      }
+    }
     const mb = client.mailbox
     const exists = mb ? mb.exists : 0
     const validity = mb && typeof mb === 'object' && 'uidValidity' in mb ? String(mb.uidValidity) : ''
