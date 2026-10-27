@@ -18,6 +18,21 @@ export interface Bundle {
   /** seed 用来给小圆标配颜色，一般是发件人地址 */
   senders: { name: string; count: number; seed: string }[]
 }
+/** 「通知」「订阅」页里折叠起来的一组：同一个发件人（GitHub 还要分仓库）的多封邮件 */
+export interface Stack {
+  id: string
+  /** 这一行显示在哪封邮件前面；空字符串是列表末尾 */
+  beforeKey: string
+  label: string
+  sub: string
+  seed: string
+  /** 组里最新一封的时间，用来决定日期分组标题 */
+  date: string
+  count: number
+  unread: number
+  open: boolean
+  members: MessageSummary[]
+}
 /** 列表里一个会话的概况 */
 export interface ThreadInfo {
   count: number
@@ -63,6 +78,9 @@ interface Props {
   /** 整屏宽的单行列表 */
   wide: boolean
   bundles: Bundle[]
+  stacks: Stack[]
+  onToggleStack: (id: string) => void
+  onStackRead: (list: MessageSummary[]) => void
   /** 刚到的新邮件（几秒后自动撤掉），列表里给它们高亮 */
   arrived: Set<string>
   /** 这次打开程序以后新到、还没读的邮件：行首挂一个「新」字，读了才消失 */
@@ -395,6 +413,56 @@ export function MessageList(props: Props) {
 
   let lastGroup = ''
   const allChecked = messages.length > 0 && checked.size >= messages.length
+  // 折叠组的那一行：长得和顶上的「通知」「订阅」行一样，点一下展开或收起
+  const renderStack = (s: Stack): React.ReactNode => {
+    const group = props.searchActive ? '' : dateGroup(s.date)
+    const showGroup = group !== lastGroup
+    lastGroup = group
+    return (
+      <Fragment key={`stack|${s.id}`}>
+        {showGroup && group && <div className="group-label">{group}</div>}
+        <div
+          className={`bundle stack ${s.open ? 'open' : ''} ${s.unread ? '' : 'quiet'}`}
+          role="button"
+          tabIndex={0}
+          aria-expanded={s.open}
+          onClick={() => props.onToggleStack(s.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && e.target === e.currentTarget) props.onToggleStack(s.id)
+          }}
+          title={s.open ? '收起' : `展开这 ${s.count} 封`}
+        >
+          {s.unread > 0 && (
+            <button
+              className="bundle-check"
+              onClick={(e) => {
+                e.stopPropagation()
+                props.onStackRead(s.members)
+              }}
+              title={`把这 ${s.unread} 封未读的邮件全部标为已读`}
+              aria-label="全部标为已读"
+            >
+              <Icon name="check" size={15} />
+            </button>
+          )}
+          <span className="bundle-icon" style={{ background: avatarColor(s.seed || s.label), color: '#fff' }}>
+            {(s.label.trim()[0] || '?').toUpperCase()}
+          </span>
+          <span className="bundle-label">
+            {s.label}
+            <em>{s.count}</em>
+            {s.unread > 0 && <b className="bundle-unread">{s.unread} 未读</b>}
+          </span>
+          <span className="bundle-senders">
+            <span className="bundle-sender">{s.sub}</span>
+          </span>
+          <span className="bundle-chev">
+            <Icon name="chevron" size={16} />
+          </span>
+        </div>
+      </Fragment>
+    )
+  }
 
   return (
     <section className={`list-pane ${props.wide ? 'wide' : ''} ${props.compact ? 'compact' : ''} ${selecting ? 'selecting' : ''}`}>
@@ -673,6 +741,8 @@ export function MessageList(props: Props) {
 
         {rows.map((m) => {
           const k = keyOf(m)
+          // 折叠行要先画（它也占一个日期分组标题的位置），所以在算这一行的分组之前先生成
+          const headNodes = props.stacks.filter((s) => s.beforeKey === k).map(renderStack)
           const outgoing = props.showRecipient(m)
           const thread = props.threads.get(k)
           const who = outgoing ? m.to[0] : m.from[0]
@@ -689,8 +759,9 @@ export function MessageList(props: Props) {
           const showGroup = group !== lastGroup
           lastGroup = group
           return (
+            <Fragment key={k}>
+              {headNodes}
             <MsgRow
-              key={k}
               m={m}
               k={k}
               groupLabel={showGroup ? group : ''}
@@ -719,8 +790,10 @@ export function MessageList(props: Props) {
               canArchive={props.canArchive(m)}
               h={rowHandlers}
             />
+            </Fragment>
           )
         })}
+        {!moreToRender && props.stacks.filter((s) => s.beforeKey === '').map(renderStack)}
 
         {props.hasMore && !props.loading && !moreToRender && (
           <button className="load-more" onClick={() => props.onLoadMore()} disabled={props.loadingMore}>

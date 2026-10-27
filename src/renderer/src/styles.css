@@ -5045,6 +5045,29 @@ html[data-motion='off'] *::after {
 .bundle.quiet:hover .bundle-icon {
   display: grid;
 }
+/* 通知/订阅页里的折叠组：展开时右边的箭头转向下，标签名允许比顶上那两行更长 */
+.bundle.stack .bundle-label {
+  min-width: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bundle.stack .bundle-senders {
+  color: var(--ink-3);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bundle.stack .bundle-chev {
+  transition: transform 0.15s;
+}
+.bundle.stack.open .bundle-chev {
+  transform: rotate(90deg);
+}
+.bundle.stack.quiet:hover .bundle-icon {
+  display: grid;
+}
 .bundle .bundle-unread {
   margin-left: 8px;
   font-size: 12px;

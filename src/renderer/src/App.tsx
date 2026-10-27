@@ -27,7 +27,7 @@ import { DraftsDialog } from './components/DraftsDialog'
 import { Icon } from './components/Icon'
 import { CommandPalette, type Command } from './components/CommandPalette'
 import { Home } from './components/Home'
-import { MessageList, type BatchAction, type Bundle, type CategoryTab, type RowAction, type ThreadInfo } from './components/MessageList'
+import { MessageList, type BatchAction, type Bundle, type CategoryTab, type RowAction, type Stack, type ThreadInfo } from './components/MessageList'
 import { Rail, type RailTarget } from './components/Rail'
 import { ScheduledDialog } from './components/ScheduledDialog'
 import { TimeDialog } from './components/TimeDialog'
@@ -222,6 +222,8 @@ export default function App() {
   const [multi, setMulti] = useState(false)
   const [data, setData] = useState<UserData>(EMPTY_DATA)
   const [tab, setTab] = useState<CategoryTab>('focus')
+  /** 「通知」「订阅」页里被用户展开的折叠组 */
+  const [openStacks, setOpenStacks] = useState<Set<string>>(new Set())
   const [home, setHome] = useState(false)
   const [drawer, setDrawer] = useState(false)
   const [timePick, setTimePick] = useState<{ title: string; confirmLabel: string; onPick: (ts: number) => void } | null>(null)
@@ -409,7 +411,66 @@ export default function App() {
   const groups = groupByThread(inTab, threadsOn ? threadIds : null)
   const groupPinned = (g: MessageSummary[]): boolean => g.some((m) => pinnedKeys.has(keyOf(m)))
   // 置顶的排在最前面（搜索结果和「稍后处理」里保持原来的顺序）
-  const ordered = activeQuery || virtualView ? groups : [...groups.filter(groupPinned), ...groups.filter((g) => !groupPinned(g))]
+  const orderedAll = activeQuery || virtualView ? groups : [...groups.filter(groupPinned), ...groups.filter((g) => !groupPinned(g))]
+  // 「通知」「订阅」页：同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
+  const stackOn = smartInbox && (tab === 'notification' || tab === 'newsletter')
+  const stackKeyOf = (m: MessageSummary): string => {
+    const addr = (m.from[0]?.address || '').toLowerCase()
+    const repo = /^\s*(?:(?:re|fwd?)\s*:\s*)?\[([^\]]{2,60})\]/i.exec(m.subject || '')
+    return `${tab}|${addr}|${repo ? repo[1].toLowerCase() : ''}`
+  }
+  const stacks: Stack[] = []
+  const ordered: MessageSummary[][] = []
+  {
+    const byKey = new Map<string, MessageSummary[][]>()
+    if (stackOn)
+      for (const g of orderedAll) {
+        if (groupPinned(g)) continue
+        const k = stackKeyOf(g[0])
+        const l = byKey.get(k)
+        if (l) l.push(g)
+        else byKey.set(k, [g])
+      }
+    const pend: Stack[] = []
+    const put = (g: MessageSummary[]): void => {
+      for (const s of pend) {
+        s.beforeKey = keyOf(g[0])
+        stacks.push(s)
+      }
+      pend.length = 0
+      ordered.push(g)
+    }
+    const done = new Set<string>()
+    for (const g of orderedAll) {
+      const k = stackOn && !groupPinned(g) ? stackKeyOf(g[0]) : ''
+      const members = k ? byKey.get(k) : undefined
+      if (!members || members.length < 3) {
+        put(g)
+        continue
+      }
+      if (done.has(k)) continue
+      done.add(k)
+      const msgs = members.flat()
+      // 正在看的那封所在的组保持展开，免得把当前选中的邮件藏起来
+      const open = openStacks.has(k) || (selectedKey != null && msgs.some((x) => keyOf(x) === selectedKey))
+      const first = msgs[0]
+      const repo = /\[([^\]]{2,60})\]/.exec(first.subject || '')
+      pend.push({
+        id: k,
+        beforeKey: '',
+        label: repo ? repo[1] : displayName(first.from[0]),
+        sub: first.from[0]?.address || '',
+        seed: first.from[0]?.address || '',
+        date: first.date,
+        count: msgs.length,
+        unread: msgs.filter((x) => !x.seen).length,
+        open,
+        members: msgs
+      })
+      if (open) for (const mg of members) put(mg)
+    }
+    for (const s of pend) stacks.push(s)
+  }
   /** 列表里的每一行：一封邮件，或者一个会话里最新的那一封 */
   const visible = ordered.map((g) => g[0])
   /** 列表里这些行包含的所有邮件 */
@@ -1390,7 +1451,7 @@ export default function App() {
     // 在「聚焦 / 通知 / 订阅」分类页里，只处理这一页列出来的邮件，不碰其他分类
     if (smartInbox && tab !== 'all') {
       // 聚焦列表里，折叠在顶上的未读通知和订阅也算这一页的
-      const unread = (tab === 'focus' ? shown : flat).filter((m) => !m.seen)
+      const unread = (tab === 'focus' ? shown : inTab).filter((m) => !m.seen)
       if (!unread.length) notify('这一页没有未读邮件')
       else {
         markSeen(unread, true)
@@ -3345,6 +3406,21 @@ export default function App() {
             compact={look.reading.density === 'compact'}
             wide={wide}
             bundles={bundles}
+            stacks={stacks}
+            onToggleStack={(id) =>
+              setOpenStacks((s) => {
+                const n = new Set(s)
+                if (n.has(id)) n.delete(id)
+                else n.add(id)
+                return n
+              })
+            }
+            onStackRead={(list) => {
+              const un = list.filter((m) => !m.seen)
+              if (!un.length) return
+              markSeen(un, true)
+              notify(`已将 ${un.length} 封邮件标为已读`)
+            }}
             arrived={arrived}
             fresh={fresh}
             smart={inboxView && !activeQuery ? !!settings.reading.smartInbox : undefined}
