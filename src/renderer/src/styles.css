@@ -5037,6 +5037,20 @@ html[data-motion='off'] *::after {
 .bundle.arrived {
   animation: bb-bundle 1.6s ease-out 2;
 }
+/* 全读过的通知/订阅行：图标放淡，悬停时图标不被「全部已读」按钮顶替 */
+.bundle.quiet .bundle-icon {
+  background: var(--bg-hover, rgba(128, 128, 128, 0.18));
+  color: var(--ink-3);
+}
+.bundle.quiet:hover .bundle-icon {
+  display: grid;
+}
+.bundle .bundle-unread {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+}
 .bundle .bundle-new {
   margin-left: 8px;
   padding: 1px 8px;

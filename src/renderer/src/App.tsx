@@ -400,7 +400,7 @@ export default function App() {
     !smartInbox || tab === 'all'
       ? shown
       : tab === 'focus'
-        ? shown.filter((m) => m.category === 'personal' || m.seen)
+        ? shown.filter((m) => m.category === 'personal' || pinnedKeys.has(keyOf(m)))
         : shown.filter((m) => m.category === tab)
   // ---------- 会话 ----------
   // 同一个话题来回的邮件合并成一行。搜索结果、「稍后处理」「已置顶」里不合并，一封是一封
@@ -3018,25 +3018,40 @@ export default function App() {
         unread: t.id === 'focus' ? unreadIn('personal' as CategoryTab) : t.id === 'all' ? 0 : unreadIn(t.id)
       }))
     : undefined
-  // 聚焦列表顶部：把未读的通知和订阅各折叠成一行
+  // 聚焦列表顶部：把通知和订阅（不管读没读）各折叠成一行，行里标出其中有几封没读
   const bundles: Bundle[] =
     smartInbox && tab === 'focus'
       ? (['notification', 'newsletter'] as const).flatMap((cat) => {
-          const list = shown.filter((m) => m.category === cat && !m.seen)
+          // 置顶的邮件留在列表里，不折叠
+          const list = shown.filter((m) => m.category === cat && !pinnedKeys.has(keyOf(m)))
           if (!list.length) return []
-          const counts = new Map<string, { count: number; seed: string }>()
+          const counts = new Map<string, { count: number; unread: number; seed: string }>()
           for (const m of list) {
             const name = displayName(m.from[0])
             const c = counts.get(name)
-            if (c) c.count++
-            else counts.set(name, { count: 1, seed: m.from[0]?.address || name })
+            if (c) {
+              c.count++
+              if (!m.seen) c.unread++
+            } else counts.set(name, { count: 1, unread: m.seen ? 0 : 1, seed: m.from[0]?.address || name })
           }
           const freshOf = new Set(list.filter((m) => arrived.has(keyOf(m))).map((m) => displayName(m.from[0])))
           const senders = [...counts.entries()]
-            .sort((a, b) => Number(freshOf.has(b[0])) - Number(freshOf.has(a[0])) || b[1].count - a[1].count)
+            .sort(
+              (a, b) =>
+                Number(freshOf.has(b[0])) - Number(freshOf.has(a[0])) || b[1].unread - a[1].unread || b[1].count - a[1].count
+            )
             .slice(0, 8)
             .map(([name, v]) => ({ name, count: v.count, seed: v.seed }))
-          return [{ id: cat, label: TAB_NAMES[cat], count: list.length, fresh: list.filter((m) => arrived.has(keyOf(m))).length, senders }]
+          return [
+            {
+              id: cat,
+              label: TAB_NAMES[cat],
+              count: list.length,
+              unread: list.filter((m) => !m.seen).length,
+              fresh: list.filter((m) => arrived.has(keyOf(m))).length,
+              senders
+            }
+          ]
         })
       : []
   // 外观相关的几项：设置窗口里改了还没保存时，先按改的样子显示

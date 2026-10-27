@@ -11,6 +11,8 @@ export interface Bundle {
   id: MailCategory
   label: string
   count: number
+  /** 其中没读的有几封（全读过就是 0，行显示成安静的样子） */
+  unread: number
   /** 其中刚刚到的有几封 */
   fresh: number
   /** seed 用来给小圆标配颜色，一般是发件人地址 */
@@ -623,7 +625,7 @@ export function MessageList(props: Props) {
         {props.bundles.map((b) => (
           <div
             key={b.id}
-            className={`bundle ${b.fresh ? 'arrived' : ''}`}
+            className={`bundle ${b.fresh ? 'arrived' : ''} ${b.unread ? '' : 'quiet'}`}
             role="button"
             tabIndex={0}
             onClick={() => props.onTab(b.id)}
@@ -632,23 +634,26 @@ export function MessageList(props: Props) {
             }}
             title={`查看全部${b.label}邮件`}
           >
-            <button
-              className="bundle-check"
-              onClick={(e) => {
-                e.stopPropagation()
-                props.onBundleRead(b.id)
-              }}
-              title={`把这 ${b.count} 封${b.label}全部标为已读`}
-              aria-label={`把${b.label}全部标为已读`}
-            >
-              <Icon name="check" size={15} />
-            </button>
+            {b.unread > 0 && (
+              <button
+                className="bundle-check"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  props.onBundleRead(b.id)
+                }}
+                title={`把这 ${b.unread} 封未读的${b.label}全部标为已读`}
+                aria-label={`把${b.label}全部标为已读`}
+              >
+                <Icon name="check" size={15} />
+              </button>
+            )}
             <span className="bundle-icon">
               <Icon name={b.id === 'notification' ? 'bell' : 'all'} size={17} />
             </span>
             <span className="bundle-label">
               {b.label}
               <em>{b.count}</em>
+              {b.unread > 0 && <b className="bundle-unread">{b.unread} 未读</b>}
               {b.fresh > 0 && <b className="bundle-new">+{b.fresh} 新</b>}
             </span>
             <span className="bundle-senders">
