@@ -189,6 +189,7 @@ export default function App() {
   foldersRef.current = folders
   const unseenAsked = useRef<Record<string, string>>({})
   /** 核对后更正过的未读数：服务器还报 server 封时，按 real 封显示 */
+  const catUnreadRef = useRef({ notice: 0, news: 0 })
   const unseenFix = useRef<Record<string, { server: number; real: number }>>({})
   const fixUnseen = (accountId: string, list: Folder[]): Folder[] =>
     list.map((f) => {
@@ -970,6 +971,18 @@ export default function App() {
       return
     }
     if (t === 'inbox') return goInbox()
+    // 通知、订阅是收件箱里分出来的两个位置：已经在收件箱里就只切分类，不重新加载
+    if (t === 'notice' || t === 'news') {
+      const cat: CategoryTab = t === 'notice' ? 'notification' : 'newsletter'
+      if (inboxView && !activeQuery) {
+        setHome(false)
+        setSelectedKey(null)
+        setDetail(null)
+      } else goInbox()
+      autoLoads.current = 0
+      setTab(cat)
+      return
+    }
     if (t === 'pinned' || t === 'snoozed') return selectFolder(t === 'pinned' ? PINNED : SNOOZED, '')
     // 写信时自动保存的草稿在本机；有的话先列出来
     if (t === 'drafts' && data.drafts.some((d) => !data.scheduled.some((x) => x.undo && x.draftId === d.id))) {
@@ -3067,6 +3080,9 @@ export default function App() {
     !data.priority.includes(detailSender) &&
     !isBlocked(detailSender)
   const unreadIn = (c: CategoryTab): number => shown.filter((m) => !m.seen && m.category === c).length
+  // 通知、订阅两个位置上的未读数：在收件箱里时现算，去别的文件夹时沿用最后一次看到的
+  if (inboxView && !activeQuery) catUnreadRef.current = { notice: unreadIn('notification'), news: unreadIn('newsletter') }
+  const catUnread = catUnreadRef.current
   const tabs = smartInbox
     ? ([
         { id: 'focus', label: '聚焦' },
@@ -3079,39 +3095,8 @@ export default function App() {
         unread: t.id === 'focus' ? unreadIn('personal' as CategoryTab) : t.id === 'all' ? 0 : unreadIn(t.id)
       }))
     : undefined
-  // 聚焦列表顶部：通知和订阅（不管读没读）各折叠成一行；行上的数字只数没读的，全读过就显示「没有未读」
-  const bundles: Bundle[] =
-    smartInbox && tab === 'focus'
-      ? (['notification', 'newsletter'] as const).flatMap((cat) => {
-          // 置顶的邮件留在列表里，不折叠
-          const list = shown.filter((m) => m.category === cat && !pinnedKeys.has(keyOf(m)))
-          if (!list.length) return []
-          // 横条上列的发件人只数没读的；全读过就不列，免得和新邮件混在一起
-          const unreadList = list.filter((m) => !m.seen)
-          const counts = new Map<string, { count: number; seed: string }>()
-          for (const m of unreadList) {
-            const name = displayName(m.from[0])
-            const c = counts.get(name)
-            if (c) c.count++
-            else counts.set(name, { count: 1, seed: m.from[0]?.address || name })
-          }
-          const freshOf = new Set(unreadList.filter((m) => arrived.has(keyOf(m))).map((m) => displayName(m.from[0])))
-          const senders = [...counts.entries()]
-            .sort((a, b) => Number(freshOf.has(b[0])) - Number(freshOf.has(a[0])) || b[1].count - a[1].count)
-            .slice(0, 8)
-            .map(([name, v]) => ({ name, count: v.count, seed: v.seed }))
-          return [
-            {
-              id: cat,
-              label: TAB_NAMES[cat],
-              count: list.length,
-              unread: unreadList.length,
-              fresh: unreadList.filter((m) => arrived.has(keyOf(m))).length,
-              senders
-            }
-          ]
-        })
-      : []
+  // 通知、订阅不再在聚焦列表顶上占行：它们在左边导航栏里各有一个位置（带未读数）
+  const bundles: Bundle[] = []
   // 外观相关的几项：设置窗口里改了还没保存时，先按改的样子显示
   const look = preview ?? settings
   const wide = look.general.layout !== 'split'
@@ -3123,7 +3108,11 @@ export default function App() {
     : pinnedView
     ? 'pinned'
     : inboxView
-    ? 'inbox'
+    ? smartInbox && tab === 'notification'
+      ? 'notice'
+      : smartInbox && tab === 'newsletter'
+      ? 'news'
+      : 'inbox'
     : unifiedUse
     ? unifiedUse
     : folder?.specialUse === 'drafts' || folder?.specialUse === 'sent' || folder?.specialUse === 'trash'
@@ -3270,6 +3259,9 @@ export default function App() {
       <Rail
         active={railActive}
         unread={inboxUnseen}
+        showCats={!!settings?.reading.smartInbox}
+        noticeUnread={catUnread.notice}
+        newsUnread={catUnread.news}
         pinnedCount={0}
         snoozedCount={snoozedCount}
         draftsCount={draftList.length}

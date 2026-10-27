@@ -2,11 +2,15 @@ import type { Account } from '../../../shared/types'
 import { tagMark } from '../utils'
 import { Icon, type IconName } from './Icon'
 
-export type RailTarget = 'home' | 'inbox' | 'pinned' | 'snoozed' | 'drafts' | 'sent' | 'trash'
+export type RailTarget = 'home' | 'inbox' | 'notice' | 'news' | 'pinned' | 'snoozed' | 'drafts' | 'sent' | 'trash'
 
 interface Props {
   active: RailTarget | null
   unread: number
+  /** 智能收件箱开着时，才显示「通知」「订阅」两个位置 */
+  showCats: boolean
+  noticeUnread: number
+  newsUnread: number
   pinnedCount: number
   snoozedCount: number
   draftsCount: number
@@ -28,6 +32,8 @@ interface Props {
 const ITEMS: { id: RailTarget; label: string; icon: IconName; gap?: boolean }[] = [
   { id: 'home', label: '主屏', icon: 'home' },
   { id: 'inbox', label: '收件箱', icon: 'inbox', gap: true },
+  { id: 'notice', label: '通知', icon: 'bell' },
+  { id: 'news', label: '订阅', icon: 'all' },
   { id: 'snoozed', label: '稍后处理', icon: 'clock' },
   { id: 'pinned', label: '已置顶', icon: 'pin', gap: true },
   { id: 'drafts', label: '草稿箱', icon: 'drafts' },
@@ -38,12 +44,12 @@ const ITEMS: { id: RailTarget; label: string; icon: IconName; gap?: boolean }[] 
 /** 最左侧的窄图标栏：常用位置一键直达，完整的账号和文件夹在「更多」里 */
 export function Rail(props: Props) {
   const badge = (id: RailTarget): number =>
-    id === 'inbox' ? props.unread : id === 'pinned' ? props.pinnedCount : id === 'snoozed' ? props.snoozedCount : id === 'drafts' ? props.draftsCount : 0
+    id === 'inbox' ? props.unread : id === 'notice' ? props.noticeUnread : id === 'news' ? props.newsUnread : id === 'pinned' ? props.pinnedCount : id === 'snoozed' ? props.snoozedCount : id === 'drafts' ? props.draftsCount : 0
   return (
     <nav className="rail" aria-label="主导航">
       <div className="rail-drag titlebar-drag" />
       <div className="rail-items">
-        {ITEMS.map((it) => (
+        {ITEMS.filter((it) => props.showCats || (it.id !== 'notice' && it.id !== 'news')).map((it) => (
           <button
             key={it.id}
             className={`rail-btn ${props.active === it.id ? 'active' : ''} ${it.gap ? 'gap' : ''}`}
