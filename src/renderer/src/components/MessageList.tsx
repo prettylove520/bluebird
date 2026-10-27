@@ -720,11 +720,11 @@ export function MessageList(props: Props) {
             </span>
             <span className="bundle-label">
               {b.label}
-              <em>{b.count}</em>
-              {b.unread > 0 && <b className="bundle-unread">{b.unread} 未读</b>}
+              {b.unread > 0 ? <b className="bundle-badge">{b.unread}</b> : <em>没有未读</em>}
               {b.fresh > 0 && <b className="bundle-new">+{b.fresh} 新</b>}
             </span>
             <span className="bundle-senders">
+              {b.unread === 0 && <span className="bundle-sender bundle-hint">共 {b.count} 封，点开查看</span>}
               {b.senders.map((x) => (
                 <span key={x.name} className="bundle-sender">
                   <i style={{ background: avatarColor(x.seed || x.name) }}>{(x.name.trim()[0] || '?').toUpperCase()}</i>

@@ -5068,6 +5068,23 @@ html[data-motion='off'] *::after {
 .bundle.stack.quiet:hover .bundle-icon {
   display: grid;
 }
+.bundle .bundle-badge {
+  margin-left: 8px;
+  min-width: 22px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 700;
+  text-align: center;
+}
+.bundle.quiet:not(.stack) {
+  opacity: 0.7;
+}
+.bundle .bundle-hint {
+  color: var(--ink-3);
+}
 .bundle .bundle-unread {
   margin-left: 8px;
   font-size: 12px;
