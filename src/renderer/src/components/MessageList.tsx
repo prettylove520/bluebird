@@ -489,7 +489,7 @@ export function MessageList(props: Props) {
               role="switch"
               aria-checked={props.smart}
               onClick={props.onToggleSmart}
-              title={props.smart ? '智能收件箱已开启：未读的通知和订阅会折叠起来。点一下显示全部邮件' : '现在显示全部邮件。点一下开启智能收件箱'}
+              title={props.smart ? '智能收件箱已开启：同一发件人的通知和订阅会折叠成一行。点一下全部平铺' : '现在显示全部邮件。点一下开启智能收件箱'}
               aria-label="智能收件箱"
             >
               <span className="smart-knob">
@@ -629,9 +629,9 @@ export function MessageList(props: Props) {
       {/* 聚焦列表里点开「通知」「订阅」之后：顶上给一条返回 */}
       {props.tabs && props.tab !== 'focus' && checked.size === 0 && (
         <div className="cat-bar">
-          <button className="cat-back" onClick={() => props.onTab('focus')} title="回到聚焦列表（Esc）">
+          <button className="cat-back" onClick={() => props.onTab('focus')} title="回到收件箱（Esc）">
             <Icon name="back" size={16} />
-            聚焦列表
+            收件箱
           </button>
           <span className="cat-name">
             {props.tabs.find((t) => t.id === props.tab)?.label}

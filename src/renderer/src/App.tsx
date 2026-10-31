@@ -398,14 +398,9 @@ export default function App() {
     if (waterline && m.date < waterline && m.seen && !data.pinned[keyOf(m)]) return false
     return !isBlocked(senderOf(m))
   })
-  // 聚焦列表只列真人来信，通知和订阅折叠成一行；其他分类页只看那一类
-  // 聚焦列表：真人来信全部列出；通知和订阅只有读过的才排进来，没读的折叠在顶上那一行里（点开就能看这一类的全部）
+  // 收件箱（聚焦）列出全部邮件，其中同一发件人的通知、订阅会折叠成一行（见下面的 stacks）；「通知」「订阅」页只看那一类
   const inTab =
-    !smartInbox || tab === 'all'
-      ? shown
-      : tab === 'focus'
-        ? shown.filter((m) => m.category === 'personal' || pinnedKeys.has(keyOf(m)))
-        : shown.filter((m) => m.category === tab)
+    !smartInbox || tab === 'all' || tab === 'focus' ? shown : shown.filter((m) => m.category === tab)
   // ---------- 会话 ----------
   // 同一个话题来回的邮件合并成一行。搜索结果、「稍后处理」「已置顶」里不合并，一封是一封
   const threadsOn = settings?.reading.threads !== false && !activeQuery && !virtualView
@@ -414,8 +409,10 @@ export default function App() {
   const groupPinned = (g: MessageSummary[]): boolean => g.some((m) => pinnedKeys.has(keyOf(m)))
   // 置顶的排在最前面（搜索结果和「稍后处理」里保持原来的顺序）
   const orderedAll = activeQuery || virtualView ? groups : [...groups.filter(groupPinned), ...groups.filter((g) => !groupPinned(g))]
-  // 「通知」「订阅」页：同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
-  const stackOn = smartInbox && (tab === 'notification' || tab === 'newsletter')
+  // 收件箱和「通知」「订阅」页：通知、订阅类里同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
+  const stackOn = smartInbox && tab !== 'all'
+  // 收件箱（聚焦）里只有通知、订阅类的才折叠，真人来信永远单独一行
+  const canStack = (g: MessageSummary[]): boolean => !groupPinned(g) && (tab !== 'focus' || g[0].category !== 'personal')
   const stackKeyOf = (m: MessageSummary): string => {
     const addr = (m.from[0]?.address || '').toLowerCase()
     const repo = /^\s*(?:(?:re|fwd?)\s*:\s*)?\[([^\]]{2,60})\]/i.exec(m.subject || '')
@@ -427,7 +424,7 @@ export default function App() {
     const byKey = new Map<string, MessageSummary[][]>()
     if (stackOn)
       for (const g of orderedAll) {
-        if (groupPinned(g)) continue
+        if (!canStack(g)) continue
         const k = stackKeyOf(g[0])
         const l = byKey.get(k)
         if (l) l.push(g)
@@ -444,7 +441,7 @@ export default function App() {
     }
     const done = new Set<string>()
     for (const g of orderedAll) {
-      const k = stackOn && !groupPinned(g) ? stackKeyOf(g[0]) : ''
+      const k = stackOn && canStack(g) ? stackKeyOf(g[0]) : ''
       const members = k ? byKey.get(k) : undefined
       if (!members || members.length < 3) {
         put(g)
@@ -1464,7 +1461,7 @@ export default function App() {
     if (!view) return
     // 在「聚焦 / 通知 / 订阅」分类页里，只处理这一页列出来的邮件，不碰其他分类
     if (smartInbox && tab !== 'all') {
-      // 聚焦列表里，折叠在顶上的未读通知和订阅也算这一页的
+      // 收件箱里，折叠起来的邮件也算这一页的
       const unread = (tab === 'focus' ? shown : inTab).filter((m) => !m.seen)
       if (!unread.length) notify('这一页没有未读邮件')
       else {
@@ -2837,7 +2834,7 @@ export default function App() {
           setMulti(false)
         } else if (drawer) setDrawer(false)
         else if (settings?.general.layout !== 'split' && selectedKey) closeReader()
-        // 在「通知」「订阅」里按 Esc 回到聚焦列表
+        // 在「通知」「订阅」里按 Esc 回到收件箱
         else if (smartInbox && tab !== 'focus') {
           autoLoads.current = 0
           setTab('focus')
@@ -3006,15 +3003,12 @@ export default function App() {
     }
   }
   const catOf = (id: string): { notice: number; news: number } => catUnreadRef.current[id] ?? { notice: 0, news: 0 }
-  const inboxUnseenOf = (id: string): number => folders[id]?.find((f) => f.specialUse === 'inbox')?.unseen ?? 0
   const catUnread = accounts.reduce(
     (t, a) => ({ notice: t.notice + catOf(a.id).notice, news: t.news + catOf(a.id).news }),
     { notice: 0, news: 0 }
   )
-  // 智能收件箱开着时，收件箱的红点只数真人来信：通知和订阅的未读在它们自己的位置上数
-  const smartCats = !!settings?.reading.smartInbox
-  const personalOf = (id: string): number => Math.max(0, inboxUnseenOf(id) - catOf(id).notice - catOf(id).news)
-  const inboxBadge = smartCats ? accounts.reduce((t, a) => t + personalOf(a.id), 0) : inboxUnseen
+  // 收件箱里现在显示全部邮件，红点就是全部未读
+  const inboxBadge = inboxUnseen
   const title = globalSearch
     ? '搜索结果'
     : snoozedView
@@ -3032,13 +3026,13 @@ export default function App() {
       : folder?.displayName || (view?.folder === 'INBOX' ? '收件箱' : view?.folder || '')
   const unifiedUse = unified && view ? UNIFIED_USE[view.folder] : undefined
   const baseUnseen = virtualView ? 0 : unified ? (unifiedUse ? 0 : inboxUnseen) : folder?.unseen ?? 0
-  // 智能收件箱里：聚焦页只数真人来信，通知页、订阅页数各自的
+  // 智能收件箱里：通知页、订阅页数各自的未读，其余数整个收件箱的
   const unseenHere = (() => {
     if (!smartInbox || !baseUnseen) return baseUnseen
     const ids = unified ? accounts.map((a) => a.id) : view ? [view.accountId] : []
     const n = ids.reduce((t, id) => t + catOf(id).notice, 0)
     const w = ids.reduce((t, id) => t + catOf(id).news, 0)
-    return tab === 'notification' ? n : tab === 'newsletter' ? w : tab === 'focus' ? Math.max(0, baseUnseen - n - w) : baseUnseen
+    return tab === 'notification' ? n : tab === 'newsletter' ? w : baseUnseen
   })()
   const activeSubtitle = (): string =>
     globalSearch
@@ -3046,7 +3040,7 @@ export default function App() {
         ? `正在所有邮箱里搜索「${activeQuery}」…${shown.length ? `已找到 ${shown.length} 封` : ''}`
         : `在所有邮箱里搜索「${activeQuery}」，找到 ${shown.length} 封`
       : `在这里搜索「${activeQuery}」，找到 ${total} 封`
-  const TAB_NAMES: Record<CategoryTab, string> = { focus: '聚焦列表', all: '全部邮件', personal: '个人', notification: '通知', newsletter: '订阅' }
+  const TAB_NAMES: Record<CategoryTab, string> = { focus: '收件箱', all: '全部邮件', personal: '个人', notification: '通知', newsletter: '订阅' }
   const subtitle = activeQuery
     ? activeSubtitle()
     : snoozedView
@@ -3122,7 +3116,7 @@ export default function App() {
         unread: t.id === 'focus' ? unreadIn('personal' as CategoryTab) : t.id === 'all' ? 0 : unreadIn(t.id)
       }))
     : undefined
-  // 通知、订阅不再在聚焦列表顶上占行：它们在左边导航栏里各有一个位置（带未读数）
+  // 通知、订阅不在列表顶上占行：左边导航栏里各有一个位置（带未读数），收件箱里同发件人的折叠成一行
   const bundles: Bundle[] = []
   // 外观相关的几项：设置窗口里改了还没保存时，先按改的样子显示
   const look = preview ?? settings
