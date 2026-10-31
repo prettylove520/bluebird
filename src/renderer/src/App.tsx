@@ -189,7 +189,8 @@ export default function App() {
   foldersRef.current = folders
   const unseenAsked = useRef<Record<string, string>>({})
   /** 核对后更正过的未读数：服务器还报 server 封时，按 real 封显示 */
-  const catUnreadRef = useRef({ notice: 0, news: 0 })
+  /** 每个邮箱收件箱里没读的通知、订阅各有几封（在收件箱里看过才知道，没看过的先按 0 算） */
+  const catUnreadRef = useRef<Record<string, { notice: number; news: number }>>({})
   const unseenFix = useRef<Record<string, { server: number; real: number }>>({})
   const fixUnseen = (accountId: string, list: Folder[]): Folder[] =>
     list.map((f) => {
@@ -2992,6 +2993,28 @@ export default function App() {
     (sum, a) => sum + (folders[a.id]?.find((f) => f.specialUse === 'inbox')?.unseen ?? 0),
     0
   )
+  const unreadIn = (c: CategoryTab): number => shown.filter((m) => !m.seen && m.category === c).length
+  // 通知、订阅的未读数：在收件箱里时现算并记下来，去别的文件夹时沿用记下的
+  if (inboxView && !activeQuery) {
+    const ids = view?.accountId === ALL ? accounts.map((a) => a.id) : view ? [view.accountId] : []
+    for (const id of ids) {
+      const mine = shown.filter((m) => m.accountId === id && !m.seen)
+      catUnreadRef.current[id] = {
+        notice: mine.filter((m) => m.category === 'notification').length,
+        news: mine.filter((m) => m.category === 'newsletter').length
+      }
+    }
+  }
+  const catOf = (id: string): { notice: number; news: number } => catUnreadRef.current[id] ?? { notice: 0, news: 0 }
+  const inboxUnseenOf = (id: string): number => folders[id]?.find((f) => f.specialUse === 'inbox')?.unseen ?? 0
+  const catUnread = accounts.reduce(
+    (t, a) => ({ notice: t.notice + catOf(a.id).notice, news: t.news + catOf(a.id).news }),
+    { notice: 0, news: 0 }
+  )
+  // 智能收件箱开着时，收件箱的红点只数真人来信：通知和订阅的未读在它们自己的位置上数
+  const smartCats = !!settings?.reading.smartInbox
+  const personalOf = (id: string): number => Math.max(0, inboxUnseenOf(id) - catOf(id).notice - catOf(id).news)
+  const inboxBadge = smartCats ? accounts.reduce((t, a) => t + personalOf(a.id), 0) : inboxUnseen
   const title = globalSearch
     ? '搜索结果'
     : snoozedView
@@ -3008,7 +3031,15 @@ export default function App() {
             : '所有收件箱'
       : folder?.displayName || (view?.folder === 'INBOX' ? '收件箱' : view?.folder || '')
   const unifiedUse = unified && view ? UNIFIED_USE[view.folder] : undefined
-  const unseenHere = virtualView ? 0 : unified ? (unifiedUse ? 0 : inboxUnseen) : folder?.unseen ?? 0
+  const baseUnseen = virtualView ? 0 : unified ? (unifiedUse ? 0 : inboxUnseen) : folder?.unseen ?? 0
+  // 智能收件箱里：聚焦页只数真人来信，通知页、订阅页数各自的
+  const unseenHere = (() => {
+    if (!smartInbox || !baseUnseen) return baseUnseen
+    const ids = unified ? accounts.map((a) => a.id) : view ? [view.accountId] : []
+    const n = ids.reduce((t, id) => t + catOf(id).notice, 0)
+    const w = ids.reduce((t, id) => t + catOf(id).news, 0)
+    return tab === 'notification' ? n : tab === 'newsletter' ? w : tab === 'focus' ? Math.max(0, baseUnseen - n - w) : baseUnseen
+  })()
   const activeSubtitle = (): string =>
     globalSearch
       ? listLoading
@@ -3079,10 +3110,6 @@ export default function App() {
     !accepted.includes(detailSender) &&
     !data.priority.includes(detailSender) &&
     !isBlocked(detailSender)
-  const unreadIn = (c: CategoryTab): number => shown.filter((m) => !m.seen && m.category === c).length
-  // 通知、订阅两个位置上的未读数：在收件箱里时现算，去别的文件夹时沿用最后一次看到的
-  if (inboxView && !activeQuery) catUnreadRef.current = { notice: unreadIn('notification'), news: unreadIn('newsletter') }
-  const catUnread = catUnreadRef.current
   const tabs = smartInbox
     ? ([
         { id: 'focus', label: '聚焦' },
@@ -3258,7 +3285,7 @@ export default function App() {
     <div className={`app ${wide ? 'wide' : 'split'} ${reading ? 'reading' : ''} ${home && accounts.length ? 'home-on' : ''}`}>
       <Rail
         active={railActive}
-        unread={inboxUnseen}
+        unread={inboxBadge}
         showCats={!!settings?.reading.smartInbox}
         noticeUnread={catUnread.notice}
         newsUnread={catUnread.news}
@@ -3333,7 +3360,7 @@ export default function App() {
 
       {home && accounts.length > 0 && (
         <Home
-          unread={inboxUnseen}
+          unread={inboxBadge}
           background={look.general.homeBackground}
           image={homeImage}
           onOpenInbox={() => {
