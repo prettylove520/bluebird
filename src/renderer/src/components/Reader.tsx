@@ -639,6 +639,16 @@ export function Reader(props: Props) {
               </div>
               <time className="mail-date">{fullDate(detail.date)}</time>
               <button
+                className={`icon-btn ${props.translation === 'on' ? 'on' : ''}`}
+                onClick={props.translation === 'on' ? props.onShowOriginal : props.onTranslate}
+                disabled={props.translation === 'loading'}
+                title={props.translation === 'on' ? '显示原文（T）' : props.translation === 'loading' ? '正在翻译…' : '翻译这封邮件（T）'}
+                aria-label="翻译"
+                aria-pressed={props.translation === 'on'}
+              >
+                <Icon name="globe" />
+              </button>
+              <button
                 className="icon-btn more-btn"
                 onClick={(e) => {
                   const r = e.currentTarget.getBoundingClientRect()

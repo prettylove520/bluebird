@@ -5169,3 +5169,33 @@ html[data-motion='off'] *::after {
 html[data-motion='off'] .msg.new .unread-dot {
   animation: none;
 }
+
+/* ---------- 收件箱里的折叠行（1.0.35）：做成低调的灰边小行，不和有底色的未读邮件混在一起 ---------- */
+.bundle.stack {
+  background: transparent;
+  border: 1px dashed rgba(128, 128, 128, 0.4);
+  margin: 3px 10px;
+  padding: 7px 14px;
+  border-radius: 10px;
+  filter: none;
+}
+.bundle.stack:hover {
+  background: rgba(128, 128, 128, 0.1);
+  filter: none;
+}
+.bundle.stack .bundle-icon {
+  width: 26px;
+  height: 26px;
+  font-size: 12px;
+}
+.bundle.stack .bundle-label {
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.bundle.stack.quiet {
+  opacity: 0.75;
+}
+.bundle.stack .bundle-unread-sub {
+  color: var(--ink);
+  font-weight: 600;
+}

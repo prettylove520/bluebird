@@ -454,7 +454,7 @@ export function MessageList(props: Props) {
             {s.unread > 0 && <b className="bundle-unread">{s.unread} 未读</b>}
           </span>
           <span className="bundle-senders">
-            <span className="bundle-sender">{s.sub}</span>
+            <span className={`bundle-sender ${s.unread ? 'bundle-unread-sub' : ''}`}>{s.unread ? `未读：${s.sub}` : s.sub}</span>
           </span>
           <span className="bundle-chev">
             <Icon name="chevron" size={16} />

@@ -458,7 +458,8 @@ export default function App() {
         id: k,
         beforeKey: '',
         label: repo ? repo[1] : displayName(first.from[0]),
-        sub: first.from[0]?.address || '',
+        // 组里有没读的：行上直接写最新那封没读邮件的主题，不用点开就知道是什么
+        sub: msgs.find((x) => !x.seen)?.subject || first.from[0]?.address || '',
         seed: first.from[0]?.address || '',
         date: first.date,
         count: msgs.length,
@@ -2514,7 +2515,17 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [detail, translatedNow, tr?.data]
   )
-  const foreign = useMemo(() => !!detail && looksForeign(detail), [detail])
+  const foreign = useMemo(() => {
+    if (!detail) return false
+    // 只有 HTML 没有纯文字部分的邮件（很多通知邮件都是），拿 HTML 去掉标签后的文字来判断
+    const plain = detail.text?.trim()
+      ? detail.text
+      : (detail.html || '')
+          .replace(/<(style|script|head)[\s\S]*?<\/\1>/gi, ' ')
+          .replace(/<[^>]+>/g, ' ')
+          .replace(/&nbsp;/g, ' ')
+    return looksForeign({ subject: detail.subject, text: plain })
+  }, [detail])
 
   // 关窗口前，还在「可以撤销」那几秒里的删除、归档马上交给服务器去做。程序正在退出时不一定来得及做完——
   // 没做完的话邮件只是还留在原处，下次打开还在，不会丢
