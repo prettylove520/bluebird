@@ -79,6 +79,8 @@ import {
   moveMessage,
   searchMessages,
   setFlag,
+  markSeenSoon,
+  applyPendingSeen,
   summarizeUids
 } from './mail/service'
 import { sendMessage } from './mail/smtp'
@@ -1012,7 +1014,7 @@ function registerIpc(): void {
   })
   handle('mail:list', async (accountId: string, folder: string, before?: number) => {
     // 刷新第一页时把上次存的那一页交给它：只补取变了的，不用整页重取
-    const page = await listMessages(need(accountId), folder, before, 'main', before ? null : getCachedList(accountId, folder))
+    const page = applyPendingSeen(accountId, folder, await listMessages(need(accountId), folder, before, 'main', before ? null : getCachedList(accountId, folder)))
     // 只缓存最新的一页，下次打开时先显示它
     if (!before) putCachedList(accountId, folder, page)
     return page
@@ -1021,7 +1023,10 @@ function registerIpc(): void {
   handle('mail:reconnect', (ids: string[]) => {
     for (const id of Array.isArray(ids) ? ids : []) dropClient(String(id))
   })
-  handle('cache:list', (accountId: string, folder: string) => getCachedList(accountId, folder) ?? null)
+  handle('cache:list', (accountId: string, folder: string) => {
+    const c = getCachedList(accountId, folder)
+    return c ? applyPendingSeen(accountId, folder, c) : null
+  })
   handle('cache:info', () => cacheSize())
   handle('cache:clear', () => {
     resetMemoryCaches()
@@ -1036,7 +1041,7 @@ function registerIpc(): void {
     const cached = getCachedDetail(accountId, folder, uid)
     // 旧版本存下来的缓存里没有退订信息，遇到就重新取一次
     if (cached && cached.v === DETAIL_VERSION) {
-      if (markSeen !== false) setFlag(account, folder, uid, 'seen', true).catch(() => undefined)
+      if (markSeen !== false) markSeenSoon(account, folder, uid)
       return forReader(account, cached)
     }
     let detail: MessageDetail
@@ -1574,7 +1579,7 @@ app.whenReady().then(() => {
         for (const use of ['trash', 'sent', 'drafts'] as const) {
           try {
             const path = await findSpecialPath(a, use)
-            if (path) putCachedList(a.id, path, await listMessages(a, path, undefined, 'bg', getCachedList(a.id, path)))
+            if (path) putCachedList(a.id, path, applyPendingSeen(a.id, path, await listMessages(a, path, undefined, 'bg', getCachedList(a.id, path))))
           } catch {
             // 取不到就算了，点开时再现取
           }

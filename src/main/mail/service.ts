@@ -1036,7 +1036,7 @@ export async function getMessage(
     opts.lane ?? 'main'
   )
   // 已读标记不用等：正文取回来就先给界面，标记在后面悄悄补上（少一次和服务器来回）
-  if (markSeen && !flags?.has('\\Seen')) setFlag(account, folder, uid, 'seen', true).catch(() => undefined)
+  if (markSeen && !flags?.has('\\Seen')) markSeenSoon(account, folder, uid)
 
   // mailparser 默认会把正文里 cid: 引用的内嵌图片替换成 data: 地址
   const parsed = await simpleParser(source)
@@ -1186,6 +1186,43 @@ export async function setFlag(
       if (!ok) lostConnection(client)
     }
   })
+}
+
+// 打开邮件时的「标为已读」是后台悄悄发给服务器的。代理一抖就可能没发成，邮件在服务器上仍是未读，
+// 下次刷新列表就又变回「新」。所以：没发成的自动重试几次；重试期间本机先记住「这封已读」，列表里不会变回未读
+const pendingSeen = new Map<string, Set<number>>()
+const seenKey = (accountId: string, folder: string): string => `${accountId}|${folder}`
+
+export function markSeenSoon(account: Account, folder: string, uid: number): void {
+  const key = seenKey(account.id, folder)
+  const set = pendingSeen.get(key) ?? new Set<number>()
+  set.add(uid)
+  pendingSeen.set(key, set)
+  const delays = [3000, 10000, 30000, 90000]
+  const attempt = (n: number): void => {
+    setFlag(account, folder, uid, 'seen', true).then(
+      () => {
+        set.delete(uid)
+        if (!set.size) pendingSeen.delete(key)
+      },
+      (err) => {
+        if (n < delays.length) setTimeout(() => attempt(n + 1), delays[n])
+        else {
+          set.delete(uid)
+          if (!set.size) pendingSeen.delete(key)
+          console.warn(`[已读] ${account.email} ${folder} 的一封邮件（uid ${uid}）标已读失败，服务器上仍是未读：${(err as Error).message}`)
+        }
+      }
+    )
+  }
+  attempt(0)
+}
+
+/** 列表里把「已经读了、只是还没告诉服务器」的邮件按已读显示 */
+export function applyPendingSeen<T extends { messages: { uid: number; seen: boolean }[] }>(accountId: string, folder: string, page: T): T {
+  const set = pendingSeen.get(seenKey(accountId, folder))
+  if (!set || !set.size || !page?.messages?.length) return page
+  return { ...page, messages: page.messages.map((m) => (set.has(m.uid) && !m.seen ? { ...m, seen: true } : m)) }
 }
 
 /** 把文件夹里的邮件全部标为已读（seen=true）或全部标为未读（seen=false），返回改动的数量 */
