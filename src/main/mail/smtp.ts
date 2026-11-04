@@ -10,7 +10,7 @@ import { hostname } from 'os'
 import type { Account, OutgoingMessage } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
 import { getAccount, getSecret } from '../store'
-import { proxyRoute } from '../net'
+import { proxyRouteOrDirect } from '../net'
 import { noteContacts } from '../contacts'
 import { friendlyError, isAuthError, isConnectionError } from './errors'
 import { appendMessage, findSpecialPath, getAttachment, setFlag } from './service'
@@ -46,7 +46,8 @@ async function createTransport(account: Account, password?: string) {
     tls: { servername: account.smtp.host }
   }
 
-  const route = account.useProxy ? await proxyRoute() : null
+  // 代理软件的端口连不上时改成直连（虚拟网卡模式下直连也能出国）
+  const route = account.useProxy ? (await proxyRouteOrDirect()).route : null
   if (route) options.proxy = route
 
   const transporter = nodemailer.createTransport(options)

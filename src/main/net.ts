@@ -82,6 +82,25 @@ export async function proxyRoute(p: ProxySettings = getSettings().proxy): Promis
   return `${kind === 'socks5' ? 'socks5' : 'http'}://${p.host}:${p.port}`
 }
 
+let lastDownNote = 0
+/**
+ * 和 proxyRoute 一样，但代理软件没开（端口连不上）时不报错，返回 null 表示「这次改成直连」。
+ * 开着虚拟网卡（TUN）模式时，代理软件的本地端口可能是关着的，而直连的流量会被虚拟网卡接管、照样能出国；
+ * 以前这种情况会一直报「代理软件没有开启」，邮件怎么也连不上。真的没有任何出路时，直连会连不上，由调用方报错。
+ */
+export async function proxyRouteOrDirect(p: ProxySettings = getSettings().proxy): Promise<{ route: string | null; fellBack: boolean }> {
+  try {
+    return { route: await proxyRoute(p), fellBack: false }
+  } catch (err) {
+    if (!(err instanceof ProxyDownError)) throw err
+    if (Date.now() - lastDownNote > 60000) {
+      lastDownNote = Date.now()
+      console.warn(`[代理] ${p.host}:${p.port} 连不上，这次改为直连（开着虚拟网卡/全局代理时，直连的流量会被它接管）`)
+    }
+    return { route: null, fellBack: true }
+  }
+}
+
 /**
  * 同时去连代理的数量上限：开机时七八个邮箱一起通过代理建立连接，有些代理软件会直接把多出来的断掉。
  * 排队时用户正等着的（打开邮件、看列表）排在前面，后台的（摘要、搜索）和监听新邮件的排在后面。

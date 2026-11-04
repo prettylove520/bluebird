@@ -5,7 +5,7 @@ import { ImapFlow, type ImapFlowOptions } from 'imapflow'
 import type { Account, MessageSummary } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
 import { getSecret, getSettings } from '../store'
-import { proxyRoute, withProxySlot } from '../net'
+import { proxyRouteOrDirect, withProxySlot } from '../net'
 import { friendlyError, isAuthError, isConnectionError } from './errors'
 import { classify, CLASSIFY_HEADERS } from './classify'
 import type { MailCategory } from '../../shared/types'
@@ -42,10 +42,12 @@ export async function buildImapOptions(account: Account, override?: { password?:
   // 非 SSL 端口（一般是 143）必须先升级成加密连接再登录，避免密码明文传输
   if (!account.imap.secure) opts.doSTARTTLS = true
 
-  // 要走代理的账号：代理软件没开会直接报错，不会干等到连接超时
+  // 要走代理的账号：代理软件的端口连不上时改成直连（虚拟网卡模式下直连也能出国）；
+  // 直连不通就别干等，12 秒内报错
   if (account.useProxy) {
-    const route = await proxyRoute()
+    const { route, fellBack } = await proxyRouteOrDirect()
     if (route) opts.proxy = route
+    else if (fellBack) opts.connectionTimeout = 12000
   }
   return opts
 }
