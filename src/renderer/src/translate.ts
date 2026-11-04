@@ -27,7 +27,8 @@ const SKIP = new Set(['STYLE', 'SCRIPT', 'NOSCRIPT', 'TEMPLATE', 'HEAD', 'TITLE'
 // 一封邮件最多翻译这么多字，再长就只翻译前面的（免费额度一个月 50 万字，一封超长的群发邮件不能把它吃掉一大块）
 const LIMIT = 40000
 
-const HAS_WORD = /[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-ۿ฀-๿぀-ヿ㐀-鿿가-힯]{2}/
+// 任何文字的两个连续字母都算「有内容」（以前只认拉丁、希腊、西里尔、希伯来、阿拉伯、泰、日韩中，格鲁吉亚文、亚美尼亚文、印地文这些会被当成没有文字而跳过）
+const HAS_WORD = /\p{L}{2}/u
 const ONLY_LINK = /^\s*(?:https?:\/\/\S+|www\.\S+|[^\s@]+@[^\s@]+\.[^\s@]+)\s*$/i
 
 const esc = (s: string): string => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -215,7 +216,8 @@ export function looksForeign(detail: { subject: string; text: string }): boolean
   const sample = `${detail.subject}\n${detail.text}`.slice(0, 3000)
   const han = (sample.match(/[㐀-鿿]/g) || []).length
   const kana = (sample.match(/[぀-ヿ가-힯]/g) || []).length
-  const other = (sample.match(/[A-Za-zÀ-ɏͰ-ϿЀ-ӿ֐-ۿ฀-๿]/g) || []).length
+  // 汉字、假名、韩文以外的所有字母（拉丁、西里尔、格鲁吉亚、印地文……）
+  const other = (sample.match(/\p{L}/gu) || []).length - han - kana
   const letters = han + kana + other
   if (letters < 40) return false
   if (kana > 15 && kana / letters > 0.08) return true
