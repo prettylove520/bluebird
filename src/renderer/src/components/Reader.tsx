@@ -449,6 +449,21 @@ export function Reader(props: Props) {
   const whole = props.threadCount > 1 ? (thread && thread.some((t) => t.sent) ? `会话里收到的 ${props.threadCount} 封` : `整个会话（${props.threadCount} 封）`) : ''
 
   /** 会话里没展开的邮件：一行，点一下换成看它 */
+  // 右键点在发件人、地址、主题、时间、附件名上而又没选中文字时，先把这一小块选中，
+  // 这样弹出来的菜单里就有「复制」，不用先费劲拖选
+  const pickOnRightClick = (e: React.MouseEvent): void => {
+    const sel = window.getSelection()
+    if (!sel) return
+    const target = e.target as HTMLElement
+    if (!sel.isCollapsed && sel.rangeCount && sel.getRangeAt(0).intersectsNode(target)) return
+    const unit = target.closest('.mail-sender strong, .mail-address, .mail-subject, .mail-date, .mail-account, .mail-to, .att-name, .ai-body')
+    if (!unit) return
+    const range = document.createRange()
+    range.selectNodeContents(unit)
+    sel.removeAllRanges()
+    sel.addRange(range)
+  }
+
   const threadRow = (t: ThreadItem) => {
     const from = t.message.from[0]
     const mine = !!me && from?.address.toLowerCase() === me
@@ -605,7 +620,7 @@ export function Reader(props: Props) {
       </div>
 
       <div className="reader-scroll" ref={scrollRef}>
-        <div className="mail-wrap" key={`${detail.accountId}-${detail.folder}-${detail.uid}`}>
+        <div className="mail-wrap" key={`${detail.accountId}-${detail.folder}-${detail.uid}`} onContextMenu={pickOnRightClick}>
           <h2 className="mail-subject">
             {detail.subject || '（无主题）'}
             {thread && <span className="thread-badge">{thread.length} 封邮件</span>}

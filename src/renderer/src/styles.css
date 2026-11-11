@@ -5199,3 +5199,25 @@ html[data-motion='off'] .msg.new .unread-dot {
   color: var(--ink);
   font-weight: 600;
 }
+
+/* ---------- 文字可选可复制（1.0.39）：阅读页里的主题、发件人、地址、时间、附件名，以及各个对话框里的文字 ---------- */
+.mail-wrap,
+.dialog-body,
+.toast {
+  user-select: text;
+}
+/* 按钮上的字不参与选择，免得「全选」把一堆按钮名也带上；附件名例外 */
+.mail-wrap button,
+.dialog-body button,
+.toast button,
+.mail-wrap .avatar,
+.mail-wrap .thread-badge {
+  user-select: none;
+}
+.mail-wrap .att-name {
+  user-select: text;
+}
+.mail-wrap ::selection,
+.dialog-body ::selection {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+}

@@ -2815,6 +2815,10 @@ export default function App() {
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') {
       if (readingNow) return
+      // 刚在阅读页的文字上点过或选过：Ctrl+A 是要全选这封邮件的文字，不是勾选列表里的邮件
+      const anchor = window.getSelection()?.anchorNode
+      const el = anchor instanceof Element ? anchor : anchor?.parentElement
+      if (el?.closest('.mail-wrap')) return
       e.preventDefault()
       checkAll()
       return
