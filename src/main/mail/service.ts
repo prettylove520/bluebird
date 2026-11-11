@@ -19,6 +19,9 @@ import { isConnectionError } from './errors'
 import { classify, CLASSIFY_HEADERS, parseHeaders } from './classify'
 import { noteContacts } from '../contacts'
 import { getData } from '../userdata'
+import { app } from 'electron'
+import { join } from 'path'
+import { readJsonSafe, writeJsonSafe } from '../jsonfile'
 import { loadPreviews, savePreviews } from '../cache'
 
 const PAGE_SIZE = 50
@@ -1192,24 +1195,50 @@ export async function setFlag(
 // 下次刷新列表就又变回「新」。所以：没发成的自动重试几次；重试期间本机先记住「这封已读」，列表里不会变回未读
 const pendingSeen = new Map<string, Set<number>>()
 const seenKey = (accountId: string, folder: string): string => `${accountId}|${folder}`
+// 还没告诉服务器的「已读」也记在磁盘上：程序在重试期间被关掉的话，下次启动接着发
+const pendingSeenFile = (): string => join(app.getPath('userData'), 'pending-seen.json')
+function savePendingSeen(): void {
+  try {
+    const out: Record<string, number[]> = {}
+    for (const [k, set] of pendingSeen) if (set.size) out[k] = [...set]
+    writeJsonSafe(pendingSeenFile(), out)
+  } catch {
+    // 记不下来不要紧，只是关掉程序后不会接着重试
+  }
+}
+
+/** 启动时调用：上次没来得及告诉服务器的「已读」接着发 */
+export function resumePendingSeen(find: (accountId: string) => Account | undefined): void {
+  const saved = readJsonSafe<Record<string, number[]>>(pendingSeenFile(), {})
+  for (const [k, uids] of Object.entries(saved)) {
+    const cut = k.indexOf('|')
+    const account = find(k.slice(0, cut))
+    if (!account || !Array.isArray(uids)) continue
+    for (const uid of uids.slice(0, 200)) if (Number.isInteger(uid)) markSeenSoon(account, k.slice(cut + 1), uid)
+  }
+  savePendingSeen()
+}
 
 export function markSeenSoon(account: Account, folder: string, uid: number): void {
   const key = seenKey(account.id, folder)
   const set = pendingSeen.get(key) ?? new Set<number>()
   set.add(uid)
   pendingSeen.set(key, set)
+  savePendingSeen()
   const delays = [3000, 10000, 30000, 90000]
   const attempt = (n: number): void => {
     setFlag(account, folder, uid, 'seen', true).then(
       () => {
         set.delete(uid)
         if (!set.size) pendingSeen.delete(key)
+        savePendingSeen()
       },
       (err) => {
         if (n < delays.length) setTimeout(() => attempt(n + 1), delays[n])
         else {
           set.delete(uid)
           if (!set.size) pendingSeen.delete(key)
+          savePendingSeen()
           console.warn(`[已读] ${account.email} ${folder} 的一封邮件（uid ${uid}）标已读失败，服务器上仍是未读：${(err as Error).message}`)
         }
       }

@@ -45,15 +45,24 @@ function friendly(err: unknown): string {
 }
 
 /** 更新走不走代理跟着设置来：启用了代理就走代理（国内直连 GitHub 经常连不上） */
-async function applyProxy(): Promise<void> {
+async function applyProxy(other = false): Promise<boolean> {
   try {
-    // 启用了代理就走代理；代理软件没开的话改回跟随系统，别让更新卡死在一条走不通的路上
+    // 启用了代理就走代理；代理软件没开的话改回跟随系统，别让更新卡死在一条走不通的路上。
+    // other = true：换另一条路（原本走代理的改成跟随系统），第一条路连不上时用
     const route = await proxyRoute().catch(() => null)
-    await autoUpdater.netSession.setProxy(route ? { proxyRules: route, proxyBypassRules: '<local>' } : { mode: 'system' })
+    if (other && !route) return false
+    await autoUpdater.netSession.setProxy(route && !other ? { proxyRules: route, proxyBypassRules: '<local>' } : { mode: 'system' })
+    await autoUpdater.netSession.closeAllConnections().catch(() => undefined)
+    return true
   } catch {
     // 设置代理失败就按原样去连
+    return false
   }
 }
+
+const NET_ERROR = /ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|ERR_CONNECTION|ERR_TIMED_OUT|ERR_NAME_NOT_RESOLVED|ERR_PROXY|ERR_TUNNEL|ERR_INTERNET|ERR_SSL|net::/i
+/** 第一条路正在试、失败了还会换路再试：这期间的报错先不显示给用户 */
+let firstTry = false
 
 /**
  * 检查有没有新版本，有就在后台下载。manual：用户自己点的「检查更新」（关了自动更新也照样查）
@@ -71,11 +80,21 @@ export async function checkForUpdate(manual = false): Promise<UpdateStatus> {
   if (!quiet) set({ state: 'checking' })
   try {
     await applyProxy()
-    await autoUpdater.checkForUpdates()
+    firstTry = true
+    try {
+      await autoUpdater.checkForUpdates()
+    } catch (err) {
+      firstTry = false
+      // 走代理连 GitHub 经常在握手时断掉：换一条路（跟随系统，开着虚拟网卡时也能出去）马上再试一次
+      if (!NET_ERROR.test(String((err as Error)?.message || err)) || !(await applyProxy(true))) throw err
+      console.warn('[更新] 走代理没连上，换成跟随系统再试一次')
+      await autoUpdater.checkForUpdates()
+    }
   } catch (err) {
     console.warn('[更新] 检查失败：' + String((err as Error)?.message || err).split('\n')[0])
     if (!quiet) set({ state: 'error', error: friendly(err), checkedAt: Date.now() })
   } finally {
+    firstTry = false
     checking = false
     checkQuiet = false
   }
@@ -143,7 +162,7 @@ export function initUpdater(onStatus: (s: UpdateStatus) => void): void {
   autoUpdater.on('error', (err: Error) => {
     console.warn('[更新] 出错：' + String(err?.message || err).split('\n')[0])
     // 已经下载好了的话，后面再报什么错都不影响安装
-    if (checkQuiet) return
+    if (checkQuiet || firstTry) return
     if (status.state !== 'ready') set({ state: 'error', error: friendly(err), version: status.version, checkedAt: Date.now() })
   })
   // 打开程序 10 秒后查一次，之后每 15 分钟查一次（只是读一个很小的版本说明文件）；切回窗口时离上次超过 10 分钟也会查

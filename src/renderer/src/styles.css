@@ -5221,3 +5221,15 @@ html[data-motion='off'] .msg.new .unread-dot {
 .dialog-body ::selection {
   background: color-mix(in srgb, var(--accent) 45%, transparent);
 }
+
+/* 展开的折叠组里的邮件：往里缩一点、左边一条细线，看得出是一组的（1.0.40） */
+.msg.in-stack {
+  margin-left: 26px;
+  box-shadow: -2px 0 0 rgba(128, 128, 128, 0.35);
+}
+
+.mail-wrap .mail-to-more {
+  margin-left: 8px;
+  font-size: 12px;
+  opacity: 0.75;
+}

@@ -145,6 +145,8 @@ interface RowProps {
   k: string
   /** 这一行上面要显示的日期分组标题；不显示就是空 */
   groupLabel: string
+  /** 属于一个展开了的折叠组：行往里缩一点，看得出是一组的 */
+  inStack: boolean
   name: string
   avatarSeed: string
   avatarLabel: string
@@ -188,7 +190,7 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
         role="option"
         tabIndex={r.selected ? 0 : -1}
         aria-selected={r.selected || r.isChecked}
-        className={`msg ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''} ${r.arrived ? 'arrived' : ''} ${r.isNew ? 'new' : ''}`}
+        className={`msg ${r.inStack ? 'in-stack' : ''} ${r.unread ? 'unread' : ''} ${r.selected ? 'selected' : ''} ${r.isChecked ? 'checked' : ''} ${r.arrived ? 'arrived' : ''} ${r.isNew ? 'new' : ''}`}
         onClick={(e) => h.select(m, e)}
         onMouseEnter={() => {
           setHot(true)
@@ -413,6 +415,7 @@ export function MessageList(props: Props) {
 
   let lastGroup = ''
   const allChecked = messages.length > 0 && checked.size >= messages.length
+  const openStackKeys = new Set(props.stacks.filter((s) => s.open).flatMap((s) => s.members.map(keyOf)))
   // 折叠组的那一行：长得和顶上的「通知」「订阅」行一样，点一下展开或收起
   const renderStack = (s: Stack): React.ReactNode => {
     const group = props.searchActive ? '' : dateGroup(s.date)
@@ -756,8 +759,10 @@ export function MessageList(props: Props) {
               : single
           const isPinned = props.pinned.has(k)
           const group = props.searchActive ? '' : isPinned ? '已置顶' : dateGroup(m.date)
-          const showGroup = group !== lastGroup
-          lastGroup = group
+          // 展开的折叠组里的邮件跟着组走，不再各自带日期标题（不然会出现「今天 → 最近一周 → 今天」）
+          const inOpen = openStackKeys.has(k)
+          const showGroup = !inOpen && group !== lastGroup
+          if (!inOpen) lastGroup = group
           return (
             <Fragment key={k}>
               {headNodes}
@@ -765,6 +770,7 @@ export function MessageList(props: Props) {
               m={m}
               k={k}
               groupLabel={showGroup ? group : ''}
+              inStack={inOpen}
               name={name}
               avatarSeed={who?.address || single}
               avatarLabel={avatarText(who)}

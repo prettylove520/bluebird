@@ -80,6 +80,7 @@ import {
   searchMessages,
   setFlag,
   markSeenSoon,
+  resumePendingSeen,
   applyPendingSeen,
   summarizeUids
 } from './mail/service'
@@ -1568,6 +1569,8 @@ app.whenReady().then(() => {
   applySettings()
   createWindow()
   watchAll()
+  // 上次关掉程序时还没来得及告诉服务器的「已读」，等连接建好后接着发
+  setTimeout(() => resumePendingSeen((id) => getAccount(id)), 20000)
   // 启动后稍等一下处理错过的定时任务，之后每 20 秒检查一次
   setTimeout(tick, 5000)
   setInterval(tick, 20000)

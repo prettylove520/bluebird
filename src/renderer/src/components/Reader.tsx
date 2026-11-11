@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, Address, CalendarInvite, InviteAnswer, MessageDetail, MessageSummary } from '../../../shared/types'
-import { aiMailOf, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
+import { aiMailOf, joinAddresses, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
 import { canPreview } from './AttachmentViewer'
 import { Icon } from './Icon'
 import { api } from '../api'
@@ -311,6 +311,9 @@ export function Reader(props: Props) {
 
   // AI 总结：每封邮件只总结一次，换回来直接看上次的结果
   const [aiSum, setAiSum] = useState<AiSum | null>(null)
+  /** 哪封邮件的收件人正展开显示完整地址（换一封就自动收起） */
+  const [addrFor, setAddrFor] = useState<string | null>(null)
+  const showAddr = !!detailId && addrFor === detailId
   const aiCache = useRef(new Map<string, string>())
   const aiRun = useRef(0)
   useEffect(() => {
@@ -639,8 +642,13 @@ export function Reader(props: Props) {
                   {sender?.name && <span className="mail-address">{sender.address}</span>}
                 </div>
                 <div className="mail-to">
-                  发给 {names(detail.to, me) || '（无）'}
-                  {detail.cc.length > 0 && <>，抄送 {names(detail.cc, me)}</>}
+                  发给 {(showAddr ? joinAddresses(detail.to) : names(detail.to, me)) || '（无）'}
+                  {detail.cc.length > 0 && <>，抄送 {showAddr ? joinAddresses(detail.cc) : names(detail.cc, me)}</>}
+                  {(detail.to.length > 0 || detail.cc.length > 0) && (
+                    <button className="link-btn mail-to-more" onClick={() => setAddrFor(showAddr ? null : detailId)}>
+                      {showAddr ? '收起' : '显示地址'}
+                    </button>
+                  )}
                   {props.showAccount && props.account && (
                     <span className="mail-account">
                       <span className="acct-tag" style={{ ['--c' as string]: props.account.color }}>

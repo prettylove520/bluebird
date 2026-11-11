@@ -412,7 +412,9 @@ export default function App() {
   // 收件箱和「通知」「订阅」页：通知、订阅类里同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
   const stackOn = smartInbox && tab !== 'all'
   // 收件箱（聚焦）里只有通知、订阅类的才折叠，真人来信永远单独一行
-  const canStack = (g: MessageSummary[]): boolean => !groupPinned(g) && (tab !== 'focus' || g[0].category !== 'personal')
+  // 没读的邮件不折叠：未读的永远单独一行摆在外面，一眼能看到是哪封
+  const canStack = (g: MessageSummary[]): boolean =>
+    !groupPinned(g) && g.every((x) => x.seen || keyOf(x) === selectedKey) && (tab !== 'focus' || g[0].category !== 'personal')
   const stackKeyOf = (m: MessageSummary): string => {
     const addr = (m.from[0]?.address || '').toLowerCase()
     const repo = /^\s*(?:(?:re|fwd?)\s*:\s*)?\[([^\]]{2,60})\]/i.exec(m.subject || '')
