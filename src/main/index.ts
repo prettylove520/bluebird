@@ -1209,8 +1209,10 @@ function registerIpc(): void {
     if (!parsed || parsed.invite.method !== 'REQUEST' || parsed.invite.cancelled) throw new Error('这封邮件不是可以回复的邀请')
     const organizer = parsed.invite.organizer
     if (!organizer) throw new Error('这个邀请没有写明组织者，没法回复')
-    const mine = account.email.toLowerCase()
-    const reply = buildReply(parsed, { name: account.name || '', address: parsed.attendeeAddresses.includes(mine) ? mine : account.email }, answer)
+    // 回复里写的必须是邀请上列着的那个地址，组织者的日历才认：先找这个邮箱自己，再找自己的其他邮箱（邀请是发到别的邮箱再转进来的）
+    const mine = [account.email, ...getAccounts().map((a) => a.email)].map((e) => e.toLowerCase())
+    const listed = mine.find((e) => parsed.attendeeAddresses.includes(e))
+    const reply = buildReply(parsed, { name: account.name || '', address: listed || account.email }, answer)
     await sendMessage(
       account,
       { accountId, to: organizer.address, cc: '', bcc: '', subject: reply.subject, html: '', text: reply.text, attachments: [], calendarReply: reply.ics },

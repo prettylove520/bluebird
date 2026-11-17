@@ -197,7 +197,7 @@ function clean(text: string): string {
   return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim()
 }
 
-async function chat(ai: AiSettings, key: string, system: string, user: string, maxTokens: number): Promise<string> {
+async function chat(ai: AiSettings, key: string, system: string, user: string, maxTokens: number, newTokenParam = false): Promise<string> {
   const url = validate(ai)
   const style = ai.style
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
@@ -210,7 +210,8 @@ async function chat(ai: AiSettings, key: string, system: string, user: string, m
     headers.Authorization = `Bearer ${key}`
     body = {
       model: ai.model,
-      max_tokens: maxTokens,
+      // OpenAI 新的推理模型只认 max_completion_tokens；别的服务都认 max_tokens
+      ...(newTokenParam ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
       messages: [
         { role: 'system', content: system },
         { role: 'user', content: user }
@@ -234,6 +235,10 @@ async function chat(ai: AiSettings, key: string, system: string, user: string, m
     throw new Error(aborted ? 'AI 半天没有回应，过一会儿再试（如果用的是国外的服务，请确认代理软件开着）' : `连不上 AI 服务（${url.hostname}）。请检查网络${FOREIGN.test(url.hostname) ? '，国外的服务需要在「设置 → 代理」里启用代理' : ''}`)
   }
   const raw = await res.text()
+  // 服务商说不支持 max_tokens、要用 max_completion_tokens：换个参数名再发一次
+  if (!res.ok && res.status === 400 && !newTokenParam && style !== 'anthropic' && /max_completion_tokens/.test(raw)) {
+    return chat(ai, key, system, user, maxTokens, true)
+  }
   if (!res.ok) throw explain(res.status, raw, ai)
   let json: unknown
   try {
@@ -289,7 +294,7 @@ export async function testAi(candidate: AiSettings, key?: string): Promise<{ ms:
   const k = key || getAiKey(aiHost(candidate.baseUrl))
   if (!k) throw new Error('还没有填 AI 的密钥')
   const started = Date.now()
-  await chat(candidate, k, '你是测试助手。', '请只回复两个字：好的', 20)
+  await chat(candidate, k, '你是测试助手。', '请只回复两个字：好的', 300)
   return { ms: Date.now() - started }
 }
 
@@ -406,7 +411,7 @@ export async function verifyKey(candidate: AiSettings, key: string): Promise<{ n
   // 这个服务商没有模型列表（404 / 405 等）
   if (!candidate.model) return { note: '这个服务商不提供模型列表，密钥已保存。请自己填上模型名，再点「测试连接」确认' }
   try {
-    await chat(candidate, key, '你是测试助手。', '请只回复两个字：好的', 20)
+    await chat(candidate, key, '你是测试助手。', '请只回复两个字：好的', 300)
     return {}
   } catch (err) {
     const status = err instanceof AiHttpError ? err.status : 0

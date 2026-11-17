@@ -52,7 +52,8 @@ function readProps(ics: string): Prop[] {
   return out
 }
 
-const unescapeText = (v: string): string => v.replace(/\\n/gi, '\n').replace(/\\([,;\\])/g, '$1')
+// 一次扫完：「\\n」（转义的反斜杠后面跟着 n）不能被当成换行
+const unescapeText = (v: string): string => v.replace(/\\([nN,;\\])/g, (_, c: string) => (c === 'n' || c === 'N' ? '\n' : c))
 const escapeText = (v: string): string => v.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n')
 
 // Outlook 等用 Windows 的时区名，换成通用名字
@@ -214,15 +215,28 @@ export function parseInvite(ics: string): ParsedInvite | undefined {
   }
 }
 
+/**
+ * 日历文件规定每行最多 75 个字节，长行要折成几行（续行以空格开头）。
+ * 以前按 60 个「字」折，一个汉字占 3 个字节，中文标题一行能到 180 字节，严格的日历程序会读错；
+ * 还可能把一个表情符号从中间切开。现在按字节数折，不切断任何一个字
+ */
 const fold = (line: string): string => {
   const out: string[] = []
-  let rest = line
-  while (rest.length > 60) {
-    out.push(rest.slice(0, 60))
-    rest = ' ' + rest.slice(60)
+  let cur = ''
+  let bytes = 0
+  for (const ch of line) {
+    const n = Buffer.byteLength(ch, 'utf8')
+    // 第一行最多 75 字节；后面的行开头有一个空格，所以正文最多 74 字节
+    if (bytes + n > (out.length ? 74 : 75)) {
+      out.push(cur)
+      cur = ''
+      bytes = 0
+    }
+    cur += ch
+    bytes += n
   }
-  out.push(rest)
-  return out.join('\r\n')
+  out.push(cur)
+  return out.map((l, i) => (i ? ' ' + l : l)).join('\r\n')
 }
 
 const STATUS_TEXT: Record<InviteAnswer, { part: string; verb: string }> = {

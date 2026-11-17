@@ -1,7 +1,7 @@
 // 邮件规则：新邮件到达（或用户点「现在运行」）时，按规则自动处理。规则在本机执行，不会存到邮箱服务器上
 import type { Account, MailRule, MessageSummary, RuleAction, RuleCondition } from '../shared/types'
 import { getData } from './userdata'
-import { archiveMessage, deleteMessage, listMessages, moveMessage, setFlag } from './mail/service'
+import { archiveMessage, deleteMessage, findSpecialPath, listMessages, moveMessage, setFlag } from './mail/service'
 
 /** 规则要比对的内容 */
 export interface RuleTarget {
@@ -134,7 +134,12 @@ export async function applyRules(account: Account, folder: string, targets: Rule
     const ok = await archiveMessage(account, folder, archive)
     if (!ok) throw new Error('这个邮箱没有归档文件夹')
   }, archive)
-  await run('删除', () => deleteMessage(account, folder, trash), trash)
+  // 规则只把邮件移到「已删除」，绝不彻底删除：找不到「已删除」文件夹时（deleteMessage 会直接彻底删）宁可不删
+  await run('删除', async () => {
+    const bin = await findSpecialPath(account, 'trash')
+    if (!bin || bin === folder) throw new Error('这个邮箱没找到「已删除」文件夹，为了不误删，规则没有删除邮件')
+    await deleteMessage(account, folder, trash)
+  }, trash)
 
   // 被移走的邮件不用再提醒；没移成功的还在收件箱里，照常提醒
   for (const u of outcome.gone) outcome.quiet.add(u)
