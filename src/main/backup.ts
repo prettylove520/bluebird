@@ -12,7 +12,7 @@ import { homedir, hostname } from 'os'
 import { basename, dirname, isAbsolute, join, resolve } from 'path'
 import type { Account, BackupDetect, BackupInfo, BackupMeta, Settings, UserData } from '../shared/types'
 import { onJsonWritten } from './jsonfile'
-import { exportStore, getBackupConfig, getBackupKey, importStore, rollbackStore, setBackupConfig, setBackupKey, snapshotStore, type Secret } from './store'
+import { exportStore, getBackupConfig, getBackupKey, importStore, rollbackStore, setBackupConfig, setBackupKey, snapshotStore, type ExtraKeys, type Secret } from './store'
 import { dropStateBackup, getData, replaceData } from './userdata'
 
 export const BACKUP_FILE = 'Bluebird 备份.bbk'
@@ -22,6 +22,8 @@ interface Payload {
   settings: Settings
   accounts: Account[]
   secrets: Record<string, Secret>
+  /** 翻译和 AI 的密钥（1.0.42 起；更早的备份里没有） */
+  keys?: ExtraKeys
   state: UserData
 }
 
@@ -316,7 +318,7 @@ export function restoreBackup(file: string, password: string): { accounts: numbe
   const oldState = getData()
   suspended = true
   try {
-    importStore({ settings: payload.settings, accounts: payload.accounts, secrets: payload.secrets || {} })
+    importStore({ settings: payload.settings, accounts: payload.accounts, secrets: payload.secrets || {}, keys: payload.keys })
     replaceData(state)
     setBackupKey({ key: key.toString('base64'), salt: env.salt })
     // 是从正式的备份文件恢复的，就接着往同一个位置自动备份；选的是别处的副本（比如 U 盘里的）则保持原来的备份设置

@@ -33,7 +33,8 @@ async function createTransport(account: Account, password?: string) {
     auth = { user, pass }
   }
 
-  const options: SMTPTransport.Options = {
+  // nodemailer 支持 proxy 这个选项，但它的类型说明里没写
+  const options: SMTPTransport.Options & { proxy?: string } = {
     host: account.smtp.host,
     port: account.smtp.port,
     secure: account.smtp.secure,

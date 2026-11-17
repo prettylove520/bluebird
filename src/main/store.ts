@@ -345,7 +345,34 @@ export function setBackupKey(k: { key: string; salt: string }): void {
 }
 
 /** 取出要放进备份的全部内容（登录信息是解密后的，由备份文件自己的密码保护） */
-export function exportStore(): { settings: Settings; accounts: Account[]; secrets: Record<string, Secret> } {
+/** 备份里带上的其他密钥：翻译（DeepL）和各家 AI 服务的。备份文件整体是用用户的密码加密的 */
+export interface ExtraKeys {
+  translate?: string
+  /** 接口主机名 → 密钥 */
+  ai?: Record<string, string>
+}
+
+function exportExtraKeys(): ExtraKeys {
+  const out: ExtraKeys = {}
+  const t = getTranslateKey()
+  if (t) out.translate = t
+  const ai: Record<string, string> = {}
+  for (const [k, v] of Object.entries(loadSecrets())) {
+    // 早期版本只有一把不分服务商的密钥，算在当前设置的那个主机名下
+    const host = k === AI_KEY_ID ? savedAiHost() : k.startsWith(AI_KEY_ID + ':') ? k.slice(AI_KEY_ID.length + 1) : ''
+    if (!host || ai[host]) continue
+    try {
+      const key = decrypt(v)
+      if (key) ai[host] = key
+    } catch {
+      // 解不开的就不带
+    }
+  }
+  if (Object.keys(ai).length) out.ai = ai
+  return out
+}
+
+export function exportStore(): { settings: Settings; accounts: Account[]; secrets: Record<string, Secret>; keys: ExtraKeys } {
   const c = load()
   const out: Record<string, Secret> = {}
   for (const a of c.accounts) {
@@ -354,17 +381,17 @@ export function exportStore(): { settings: Settings; accounts: Account[]; secret
     // 访问令牌每小时都会换，恢复后也会自动重新取，所以不放进备份；只留长期有效的刷新令牌
     out[a.id] = secret.kind === 'oauth2' ? { ...secret, accessToken: '', expires: 0 } : secret
   }
-  return { settings: c.settings, accounts: c.accounts, secrets: out }
+  return { settings: c.settings, accounts: c.accounts, secrets: out, keys: exportExtraKeys() }
 }
 
 /** 用备份里的内容替换现有的账号、设置和登录信息 */
-export function importStore(data: { settings: Settings; accounts: Account[]; secrets: Record<string, Secret> }): void {
+export function importStore(data: { settings: Settings; accounts: Account[]; secrets: Record<string, Secret>; keys?: ExtraKeys }): void {
   const c = load()
   c.settings = mergeSettings(data.settings)
   c.accounts = data.accounts.filter((a) => a && typeof a.id === 'string' && typeof a.email === 'string')
   save()
   const keep = loadSecrets()[BACKUP_KEY_ID]
-  // 翻译密钥是这台电脑上填的，备份里没有，恢复时原样留着
+  // 翻译和 AI 的密钥：备份里有就用备份里的（老版本做的备份里没有），没有就把这台电脑上填的原样留着
   const keepTranslate = loadSecrets()[TRANSLATE_KEY_ID]
   const keepAi = Object.entries(loadSecrets()).filter(([k]) => k === AI_KEY_ID || k.startsWith(AI_KEY_ID + ':'))
   const next: Record<string, string> = {}
@@ -375,6 +402,15 @@ export function importStore(data: { settings: Settings; accounts: Account[]; sec
   if (keep) next[BACKUP_KEY_ID] = keep
   if (keepTranslate) next[TRANSLATE_KEY_ID] = keepTranslate
   for (const [k, v] of keepAi) next[k] = v
+  const extra = data.keys
+  if (extra && typeof extra === 'object') {
+    if (typeof extra.translate === 'string' && extra.translate) next[TRANSLATE_KEY_ID] = encrypt(extra.translate)
+    if (extra.ai && typeof extra.ai === 'object') {
+      for (const [host, key] of Object.entries(extra.ai)) {
+        if (host && typeof key === 'string' && key) next[aiKeyId(host)] = encrypt(key)
+      }
+    }
+  }
   secrets = next
   writeJson('secrets.json', next)
   dropSecretsBackup()

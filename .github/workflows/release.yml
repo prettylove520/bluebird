@@ -41,9 +41,15 @@ jobs:
             echo "done=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # 按 package-lock.json 里锁定的版本安装：每次打包用的依赖完全一样，不会因为某个依赖出了新版本而变样
       - name: 安装依赖
         if: steps.ver.outputs.done == 'false'
-        run: npm install --no-fund --no-audit
+        run: npm ci --no-fund --no-audit
+
+      # 类型检查不过就不发布：编译那一步只转换代码、不检查类型，有些错要靠这一步才拦得住
+      - name: 类型检查
+        if: steps.ver.outputs.done == 'false'
+        run: npx tsc --noEmit
 
       - name: 编译
         if: steps.ver.outputs.done == 'false'
