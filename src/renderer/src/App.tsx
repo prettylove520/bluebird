@@ -27,12 +27,12 @@ import { DraftsDialog } from './components/DraftsDialog'
 import { Icon } from './components/Icon'
 import { CommandPalette, type Command } from './components/CommandPalette'
 import { Home } from './components/Home'
-import { MessageList, type BatchAction, type Bundle, type CategoryTab, type RowAction, type Stack, type ThreadInfo } from './components/MessageList'
+import { MessageList, type BatchAction, type Bundle, type CategoryTab, type RowAction, type ThreadInfo } from './components/MessageList'
 import { Rail, type RailTarget } from './components/Rail'
 import { ScheduledDialog } from './components/ScheduledDialog'
 import { TimeDialog } from './components/TimeDialog'
 import { Reader } from './components/Reader'
-import { SettingsDialog, type SettingsTab } from './components/SettingsDialog'
+import { SettingsDialog } from './components/SettingsDialog'
 import { Sidebar } from './components/Sidebar'
 import { groupByThread, threadKeys } from './threads'
 import { TARGET_LANGS, langName, looksForeign, translateMail, type Translated } from './translate'
@@ -53,130 +53,40 @@ import {
   timePresets
 } from './utils'
 
-/** accountId 为 ALL 时表示「所有收件箱」 */
-export const ALL = '*'
-/** 合并视图里 folder 的取值：INBOX 是所有收件箱，下面这两个是所有邮箱的已删除、已发送 */
-export const ALL_TRASH = '@trash'
-export const ALL_SENT = '@sent'
-export const ALL_DRAFTS = '@drafts'
-const UNIFIED_USE: Record<string, 'trash' | 'sent' | 'drafts'> = { [ALL_TRASH]: 'trash', [ALL_SENT]: 'sent', [ALL_DRAFTS]: 'drafts' }
-/** 「稍后处理」是一个虚拟视图，里面是被推迟的邮件 */
-export const SNOOZED = '~snoozed'
-/** 「已置顶」也是虚拟视图 */
-export const PINNED = '~pinned'
-const isVirtual = (id?: string): boolean => id === SNOOZED || id === PINNED
-
-const EMPTY_DATA: UserData = {
-  pinned: {},
-  snoozed: {},
-  priority: [],
-  blocked: [],
-  templates: [],
-  quickReplies: [],
-  scheduled: [],
-  drafts: [],
-  accepted: [],
-  rules: [],
-  invites: {}
-}
-
-/** 邮件的键是「账号|文件夹|UID」，文件夹名里可能也有竖线，所以从两头拆 */
-function parseKey(key: string): MsgRef {
-  const first = key.indexOf('|')
-  const last = key.lastIndexOf('|')
-  return { accountId: key.slice(0, first), folder: key.slice(first + 1, last), uid: Number(key.slice(last + 1)) }
-}
-
-const senderOf = (m: { from: { address: string }[] }): string => (m.from[0]?.address || '').toLowerCase()
-
-interface View {
-  accountId: string
-  folder: string
-}
-
-export interface MsgRef {
-  accountId: string
-  folder: string
-  uid: number
-}
-
-interface Toast {
-  id: number
-  text: string
-  /** undo：撤销发送；op：刚做的删除、归档、移动，可以撤销 */
-  kind: 'ok' | 'error' | 'mail' | 'undo' | 'op' | 'update'
-  /** 新邮件提示用：上面一行是发件人，点一下打开这封信 */
-  title?: string
-  onClick?: () => void
-  /** 撤销发送用：等几秒、是哪一封 */
-  seconds?: number
-  sendId?: string
-}
-
-/** 搜索范围：all 是所有邮箱的所有文件夹，here 只搜当前打开的这个文件夹 */
-type SearchScope = 'all' | 'here'
-
-type DialogState = { kind: 'add' } | { kind: 'settings'; tab?: SettingsTab } | null
-
-/** 一封邮件的引用；带上已读/星标状态时可以做「切换」类操作 */
-type Target = MsgRef & { seen?: boolean; flagged?: boolean }
-
-interface MenuState {
-  x: number
-  y: number
-  title?: string
-  items: MenuItem[]
-}
-
-interface ConfirmState {
-  title: string
-  message: string
-  confirmLabel: string
-  onConfirm: () => void
-}
-
-export const keyOf = (m: MsgRef): string => `${m.accountId}|${m.folder}|${m.uid}`
-const groupOf = (m: MsgRef): string => `${m.accountId}|${m.folder}`
-const textToQuote = (text: string): string => escapeHtml(text).replace(/\r?\n/g, '<br>')
-const byDateDesc = (a: MessageSummary, b: MessageSummary): number => b.date.localeCompare(a.date)
-/** 一批邮件里最早的时间，没有邮件时是空字符串 */
-const oldestDate = (list: MessageSummary[]): string => list.reduce((min, m) => (!min || m.date < min ? m.date : min), '')
-
-/** 静默刷新：用新取到的第一页替换旧数据，同时保留每个文件夹已经加载的更早邮件 */
-function mergeFresh(fresh: MessageSummary[], prev: MessageSummary[], sortByDate: boolean, refreshed?: string[]): MessageSummary[] {
-  const freshKeys = new Set(fresh.map(keyOf))
-  const minUid = new Map<string, number>()
-  const maxUid = new Map<string, number>()
-  for (const m of fresh) {
-    minUid.set(groupOf(m), Math.min(minUid.get(groupOf(m)) ?? Infinity, m.uid))
-    maxUid.set(groupOf(m), Math.max(maxUid.get(groupOf(m)) ?? 0, m.uid))
-  }
-  const recent = Date.now() - 15 * 60 * 1000
-  // refreshed：这次真正从服务器取到了的「账号|文件夹」。没取到的（比如那个账号暂时连不上）原样保留，不能让它的邮件凭空消失
-  const got = refreshed ? new Set(refreshed) : null
-  // 比服务器这次给的最新一封还新、又是刚到的：多半是新邮件提醒刚插进来、服务器那份列表慢了一步，先留着（放在最前面）
-  const newer = prev.filter((m) => {
-    if (freshKeys.has(keyOf(m))) return false
-    const max = maxUid.get(groupOf(m))
-    return max !== undefined && m.uid > max && Date.parse(m.date) > recent
-  })
-  const newerKeys = new Set(newer.map(keyOf))
-  const older = prev.filter((m) => {
-    if (freshKeys.has(keyOf(m)) || newerKeys.has(keyOf(m))) return false
-    if (got && !got.has(groupOf(m))) return true
-    const min = minUid.get(groupOf(m))
-    return min !== undefined && m.uid < min
-  })
-  const merged = [...newer, ...fresh, ...older]
-  return sortByDate ? merged.sort(byDateDesc) : merged
-}
-
-// 公共邮箱的域名，不提供「屏蔽整个域名」
-const FREE_MAIL_DOMAIN =
-  /^(qq|vip\.qq|foxmail|163|126|yeah|139|189|sina|sohu|aliyun|gmail|googlemail|outlook|hotmail|live|msn|icloud|me|yahoo|proton|protonmail)\.(com|cn|net|me|com\.cn)$/i
-
-// 列表没填满时最多自动往前补几页（每页 50 封）
-const AUTO_LOAD_LIMIT = 8
+import {
+  ALL,
+  ALL_TRASH,
+  ALL_SENT,
+  ALL_DRAFTS,
+  UNIFIED_USE,
+  SNOOZED,
+  PINNED,
+  isVirtual,
+  EMPTY_DATA,
+  parseKey,
+  senderOf,
+  keyOf,
+  groupOf,
+  textToQuote,
+  byDateDesc,
+  oldestDate,
+  mergeFresh,
+  FREE_MAIL_DOMAIN,
+  AUTO_LOAD_LIMIT,
+  type View,
+  type MsgRef,
+  type Toast,
+  type SearchScope,
+  type DialogState,
+  type Target,
+  type MenuState,
+  type ConfirmState
+} from './app/model'
+import { arrangeGroups } from './app/arrange'
+import { UndoToast } from './components/UndoToast'
+// 别的文件以前从 App 里拿这些，保留导出
+export { ALL, ALL_TRASH, ALL_SENT, ALL_DRAFTS, SNOOZED, PINNED, keyOf }
+export type { MsgRef }
 
 export default function App() {
   const [ready, setReady] = useState(false)
@@ -409,77 +319,15 @@ export default function App() {
   const threadIds = useMemo(() => threadKeys(messages), [messages])
   const groups = groupByThread(inTab, threadsOn ? threadIds : null)
   const groupPinned = (g: MessageSummary[]): boolean => g.some((m) => pinnedKeys.has(keyOf(m)))
-  // 未读的集中排在最上面，然后是置顶的，再往下按时间（搜索结果和「稍后处理」里保持原来的顺序）。
-  // 刚点开的那封虽然已经变成已读，也先留在上面不动，等点开别的邮件再回到按时间的位置，免得一点它就从眼前跳走
-  const groupOnTop = (g: MessageSummary[]): boolean => g.some((m) => !m.seen || keyOf(m) === stickTop)
-  const topGroups = activeQuery || virtualView ? [] : groups.filter(groupOnTop)
-  const unreadTop = new Set(topGroups.map((g) => keyOf(g[0])))
-  const restGroups = groups.filter((g) => !unreadTop.has(keyOf(g[0])))
-  const orderedAll = activeQuery || virtualView ? groups : [...topGroups, ...restGroups.filter(groupPinned), ...restGroups.filter((g) => !groupPinned(g))]
-  // 收件箱和「通知」「订阅」页：通知、订阅类里同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
-  const stackOn = smartInbox && tab !== 'all'
-  // 收件箱（聚焦）里只有通知、订阅类的才折叠，真人来信永远单独一行
-  // 没读的邮件不折叠：未读的永远单独一行摆在外面，一眼能看到是哪封
-  const canStack = (g: MessageSummary[]): boolean =>
-    !groupPinned(g) && !unreadTop.has(keyOf(g[0])) && g.every((x) => x.seen || keyOf(x) === selectedKey) && (tab !== 'focus' || g[0].category !== 'personal')
-  const stackKeyOf = (m: MessageSummary): string => {
-    const addr = (m.from[0]?.address || '').toLowerCase()
-    const repo = /^\s*(?:(?:re|fwd?)\s*:\s*)?\[([^\]]{2,60})\]/i.exec(m.subject || '')
-    return `${tab}|${addr}|${repo ? repo[1].toLowerCase() : ''}`
-  }
-  const stacks: Stack[] = []
-  const ordered: MessageSummary[][] = []
-  {
-    const byKey = new Map<string, MessageSummary[][]>()
-    if (stackOn)
-      for (const g of orderedAll) {
-        if (!canStack(g)) continue
-        const k = stackKeyOf(g[0])
-        const l = byKey.get(k)
-        if (l) l.push(g)
-        else byKey.set(k, [g])
-      }
-    const pend: Stack[] = []
-    const put = (g: MessageSummary[]): void => {
-      for (const s of pend) {
-        s.beforeKey = keyOf(g[0])
-        stacks.push(s)
-      }
-      pend.length = 0
-      ordered.push(g)
-    }
-    const done = new Set<string>()
-    for (const g of orderedAll) {
-      const k = stackOn && canStack(g) ? stackKeyOf(g[0]) : ''
-      const members = k ? byKey.get(k) : undefined
-      if (!members || members.length < 3) {
-        put(g)
-        continue
-      }
-      if (done.has(k)) continue
-      done.add(k)
-      const msgs = members.flat()
-      // 正在看的那封所在的组保持展开，免得把当前选中的邮件藏起来
-      const open = openStacks.has(k) || (selectedKey != null && msgs.some((x) => keyOf(x) === selectedKey))
-      const first = msgs[0]
-      const repo = /\[([^\]]{2,60})\]/.exec(first.subject || '')
-      pend.push({
-        id: k,
-        beforeKey: '',
-        label: repo ? repo[1] : displayName(first.from[0]),
-        // 组里有没读的：行上直接写最新那封没读邮件的主题，不用点开就知道是什么
-        sub: msgs.find((x) => !x.seen)?.subject || first.from[0]?.address || '',
-        seed: first.from[0]?.address || '',
-        date: first.date,
-        count: msgs.length,
-        unread: msgs.filter((x) => !x.seen).length,
-        open,
-        members: msgs
-      })
-      if (open) for (const mg of members) put(mg)
-    }
-    for (const s of pend) stacks.push(s)
-  }
+  const { unreadTop, ordered, stacks } = arrangeGroups(groups, {
+    keepOrder: !!activeQuery || virtualView,
+    stackOn: smartInbox && tab !== 'all',
+    tab,
+    pinnedKeys,
+    stickTop,
+    selectedKey,
+    openStacks
+  })
   /** 列表里的每一行：一封邮件，或者一个会话里最新的那一封 */
   const visible = ordered.map((g) => g[0])
   /** 列表里这些行包含的所有邮件 */
@@ -3860,36 +3708,6 @@ export default function App() {
           )
         ))}
       </div>
-    </div>
-  )
-}
-
-/** 点了发送以后的那几秒：显示倒计时和「撤销」；时间到了就变成「正在发送」，等主进程告诉我们结果 */
-function UndoToast({ subject, seconds, onUndo }: { subject: string; seconds: number; onUndo: () => void }) {
-  const [left, setLeft] = useState(seconds)
-  const [busy, setBusy] = useState(false)
-  useEffect(() => {
-    const end = Date.now() + seconds * 1000
-    const t = setInterval(() => setLeft(Math.max(0, Math.ceil((end - Date.now()) / 1000))), 200)
-    return () => clearInterval(t)
-  }, [seconds])
-  const waiting = left > 0 && !busy
-  return (
-    <div className="toast undo">
-      <span className="toast-undo-text">
-        <strong>{waiting ? `${left} 秒后发出` : busy ? '正在撤销…' : '正在发送…'}</strong>
-        <span>{subject}</span>
-      </span>
-      {waiting && (
-        <button
-          onClick={() => {
-            setBusy(true)
-            onUndo()
-          }}
-        >
-          撤销
-        </button>
-      )}
     </div>
   )
 }
