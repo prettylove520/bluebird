@@ -314,6 +314,9 @@ export function Reader(props: Props) {
   /** 哪封邮件的收件人正展开显示完整地址（换一封就自动收起） */
   const [addrFor, setAddrFor] = useState<string | null>(null)
   const showAddr = !!detailId && addrFor === detailId
+  /** 哪封邮件在深色模式下「按原样显示」（浅色，像一张纸）；换一封就恢复跟随深色 */
+  const [paperFor, setPaperFor] = useState<string | null>(null)
+  const paper = !!detailId && paperFor === detailId
   const aiCache = useRef(new Map<string, string>())
   const aiRun = useRef(0)
   useEffect(() => {
@@ -394,7 +397,8 @@ export function Reader(props: Props) {
     })
   }
 
-  const dark = useDark() && props.darkMail
+  const darkCapable = useDark() && props.darkMail
+  const dark = darkCapable && !paper
   const srcDoc = useMemo(() => (detail ? buildEmailDocument(detail, allowRemote, dark) : ''), [detail, allowRemote, dark])
 
   if (!props.hasSelection) {
@@ -616,6 +620,12 @@ export function Reader(props: Props) {
           <Icon name="reply" size={19} />
           回复
         </button>
+        {detail.to.length + detail.cc.length > 1 && (
+          <button className="pill-btn no-drag" onClick={props.onReplyAll} title="全部回复（A）">
+            <Icon name="replyAll" size={19} />
+            全部回复
+          </button>
+        )}
         <button className="pill-btn no-drag" onClick={props.onForward} title="转发（F）">
           <Icon name="forward" size={19} />
           转发
@@ -661,6 +671,16 @@ export function Reader(props: Props) {
                 </div>
               </div>
               <time className="mail-date">{fullDate(detail.date)}</time>
+              {darkCapable && (
+                <button
+                  className={`chip-btn paper-btn ${paper ? 'on' : ''}`}
+                  onClick={() => setPaperFor(paper ? null : detailId)}
+                  title={paper ? '这封邮件跟随深色模式显示' : '这封邮件按原来的浅色显示（有些邮件变深色后很难看）'}
+                  aria-pressed={paper}
+                >
+                  {paper ? '跟随深色' : '按原样显示'}
+                </button>
+              )}
               <button
                 className={`icon-btn ${props.translation === 'on' ? 'on' : ''}`}
                 onClick={props.translation === 'on' ? props.onShowOriginal : props.onTranslate}
@@ -830,7 +850,7 @@ export function Reader(props: Props) {
               </ul>
             )}
 
-            <div className={`mail-body ${dark ? 'dark' : ''}`}>
+            <div className={`mail-body ${dark ? 'dark' : ''} ${paper ? 'paper' : ''}`}>
               {/* 沙箱：禁止脚本和表单（没有 allow-scripts，所以开放同源只用于量高度，邮件本身无法执行代码）；链接在系统浏览器打开 */}
               <iframe
                 ref={frameRef}
@@ -842,17 +862,6 @@ export function Reader(props: Props) {
               />
             </div>
 
-            <footer className="mail-card-foot">
-              <button className="icon-btn" onClick={props.onReply} title="回复（R）" aria-label="回复">
-                <Icon name="reply" size={18} />
-              </button>
-              <button className="icon-btn" onClick={props.onReplyAll} title="全部回复（A）" aria-label="全部回复">
-                <Icon name="replyAll" size={18} />
-              </button>
-              <button className="icon-btn" onClick={props.onForward} title="转发（F）" aria-label="转发">
-                <Icon name="forward" size={18} />
-              </button>
-            </footer>
           </article>
 
           {thread && thread.slice(threadIndex + 1).map(threadRow)}

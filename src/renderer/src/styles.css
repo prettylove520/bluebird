@@ -2756,7 +2756,7 @@ kbd {
 }
 .app.wide .quick-reply > * {
   width: 100%;
-  max-width: 1064px;
+  max-width: 760px;
 }
 .reader-back {
   position: absolute;
@@ -2988,8 +2988,9 @@ kbd {
     --line: #434957;
     --ink: #eef0f4;
     --ink-2: #b4bac6;
-    --ink-3: #868d9b;
+    --ink-3: #9aa1ae;
     --select: #34435f;
+    --select-row: #3a404c;
     --accent-soft: #2c3a55;
   }
 }
@@ -3015,8 +3016,9 @@ kbd {
   border-color: var(--line);
 }
 
+/* 阅读页（1.3.0）：内容居中成一列，最宽 760px；不再套卡片 */
 .mail-wrap {
-  max-width: 1120px;
+  max-width: 816px;
   margin: 0 auto;
   padding: 6px 28px 20px;
 }
@@ -3027,16 +3029,13 @@ kbd {
   font-weight: 700;
 }
 .mail-card {
-  border-radius: var(--radius-xl);
-  background: var(--bg-card);
-  border: 1px solid var(--line);
-  overflow: hidden;
+  background: transparent;
 }
 .mail-card .mail-from {
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 14px 14px 12px 20px;
+  padding: 6px 0 14px;
 }
 .mail-card .mail-from .avatar {
   width: 36px;
@@ -3056,32 +3055,51 @@ kbd {
   margin-left: 10px;
 }
 .mail-card .notice {
-  margin: 0 20px 12px;
+  margin: 0 0 12px;
 }
 .mail-card .attachments {
-  padding: 0 20px 12px;
+  padding: 0 0 14px;
 }
+/* 浅色：正文是一张白纸，放在浅灰的阅读区上，不加边框 */
 .mail-card .mail-body,
 .app.wide .mail-card .mail-body {
-  margin: 0 20px;
+  margin: 0;
   max-width: none;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   overflow: hidden;
-  border: 1px solid var(--line);
   background: #fff;
 }
-/* 正文反色后白底会变成这个颜色，容器用同样的颜色，加载时不会闪白 */
-.mail-card .mail-body.dark {
-  background: #191919;
-}
+/* 深色、正文跟着反色：底色和阅读区一样，看不出一块（反色前的底色见 utils.ts 的 EMAIL_DARK_CSS） */
+.mail-card .mail-body.dark,
 .mail-card .mail-body.dark iframe {
-  background: #191919;
+  background: var(--bg-page);
+  border-radius: 0;
 }
-.mail-card-foot {
-  display: flex;
-  justify-content: flex-end;
-  gap: 4px;
-  padding: 8px 14px 10px;
+/* 「按原样显示」的按钮 */
+.paper-btn {
+  flex: none;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink-2);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+.paper-btn:hover {
+  background: var(--bg-hover);
+}
+.paper-btn.on {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--bg-page);
+}
+/* 底部的快捷回复和回复框也收到同一列 */
+.reader .quick-reply > * {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

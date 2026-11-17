@@ -99,8 +99,9 @@ blockquote{margin:0 0 0 .6em;padding-left:.8em;border-left:3px solid #d5dbe1;col
 `
 
 // 深色模式：把整页颜色反过来（白底变深灰、黑字变浅色），再把图片反回去保持原样
+// 深色模式：整页反色。没写底色的邮件，底色用 #e0e5f0——反色后正好是阅读区的深色底（#2b2f38），看不出一块
 const EMAIL_DARK_CSS = `
-html{background:#fff;filter:invert(.9) hue-rotate(180deg);}
+html,body{background:#e0e5f0;}html{filter:invert(.9) hue-rotate(180deg);}
 img,video,picture,svg,[background],[style*="background-image"],[style*="background:url"]{filter:invert(1) hue-rotate(180deg);}
 `
 
