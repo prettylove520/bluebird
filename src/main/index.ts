@@ -41,6 +41,7 @@ import { appendFileSync, existsSync, readFileSync, renameSync, statSync, unlinkS
 import { addOAuthAccount, addPasswordAccount, listPresets, reauthAccount, removeAccount, updateAccount, type AccountPatch } from './accounts'
 import { detect } from './presets'
 import { cancelOAuth, getAccessToken } from './oauth'
+import { buildDiagnostics } from './diagnostics'
 import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy, proxyAlive } from './net'
@@ -970,6 +971,19 @@ function registerIpc(): void {
       win.setOverlayIcon(img, n ? `${n} 封未读` : '')
     }
     tray?.setToolTip(n ? `Bluebird Mail · ${n} 封未读` : 'Bluebird Mail')
+    return true
+  })
+  // 导出诊断信息：不含密码、令牌、密钥，存成一个文本文件，存好后在文件夹里选中它
+  handle('app:exportDiagnostics', async () => {
+    const stamp = new Date().toISOString().slice(0, 16).replace(/[-:T]/g, '')
+    const res = await dialog.showSaveDialog(win!, {
+      title: '导出诊断信息',
+      defaultPath: join(app.getPath('desktop'), `青鸟邮诊断-${stamp}.txt`),
+      filters: [{ name: '文本文件', extensions: ['txt'] }]
+    })
+    if (res.canceled || !res.filePath) return false
+    await writeFile(res.filePath, buildDiagnostics(), 'utf8')
+    shell.showItemInFolder(res.filePath)
     return true
   })
   handle('app:openDataDir', async () => {

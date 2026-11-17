@@ -171,6 +171,8 @@ export const api = {
   proxyAlive: (p: ProxySettings) => call<boolean>('proxyAlive', p),
   detectProxy: () => call<{ host: string; port: number; kind: 'socks5' | 'http'; source: 'system' | 'scan' } | null>('detectProxy'),
   openDataDir: () => call<boolean>('openDataDir'),
+  /** 导出诊断信息（不含密码和密钥）；用户取消保存时返回 false */
+  exportDiagnostics: () => call<boolean>('exportDiagnostics'),
   badge: (dataUrl: string, count: number) => call<boolean>('badge', dataUrl, count),
 
   onNewMail: (cb: (e: NewMailEvent) => void) => listen<NewMailEvent>('onNewMail', cb),

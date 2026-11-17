@@ -103,6 +103,7 @@ const api = {
   pickHomeImage: invoke('home:pick'),
   clearHomeImage: invoke('home:clear'),
   openDataDir: invoke('app:openDataDir'),
+  exportDiagnostics: invoke('app:exportDiagnostics'),
   badge: invoke('app:badge'),
   onNewMail: on('mail:new'),
   onChanged: on('mail:changed'),

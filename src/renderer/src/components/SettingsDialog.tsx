@@ -922,6 +922,19 @@ export function SettingsDialog(props: Props) {
                     打开
                   </button>
                 </Row>
+                <Row title="诊断信息" hint="遇到问题时导出一份发给开发者：包含版本、账号概况和最近的日志，不含密码、令牌和密钥">
+                  <button
+                    className="ghost-btn bordered"
+                    onClick={() =>
+                      api.exportDiagnostics().then(
+                        (ok) => ok && props.notify('诊断信息已导出，已在文件夹里选中它'),
+                        (err) => props.notify((err as Error).message, 'error')
+                      )
+                    }
+                  >
+                    导出
+                  </button>
+                </Row>
                 <CacheRow notify={props.notify} />
                 <p className="muted small">
                   账号和设置保存在这个文件夹里。授权码和登录令牌用 Windows 系统加密后保存在本机，不会上传到任何地方。为了打开更快，最近的邮件列表和读过的邮件正文会缓存在本机，附件不缓存。
