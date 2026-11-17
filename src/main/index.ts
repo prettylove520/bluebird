@@ -51,7 +51,7 @@ import type { AiRequest } from '../shared/ai'
 import { checkForUpdate, checkIfStale, downloadUpdate, initUpdater, installUpdate, updateStatus } from './updater'
 import { allowPath, BACKUP_FILE, backupInfo, backupMeta, detectBackup, disableBackup, enableBackup, flushBackup, initBackup, restoreBackup, writeBackup } from './backup'
 import { ICON_PNG_BASE64 } from './icon'
-import { dropClient, isConnecting, startWatcher, stopAll, stopWatcher } from './mail/imap'
+import { dropClient, isConnecting, kickWatchers, startWatcher, stopAll, stopWatcher } from './mail/imap'
 import {
   archiveMessage,
   deleteMessage,
@@ -248,6 +248,8 @@ function createWindow(): void {
   win.on('focus', () => {
     win?.flashFrame(false)
     checkIfStale()
+    // 监听连接要是断了正在等重连，切回窗口时马上去连，不等到下一次重试
+    kickWatchers()
   })
   win.on('closed', () => {
     win = null

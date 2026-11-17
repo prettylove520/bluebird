@@ -226,6 +226,8 @@ export default function App() {
   const [tab, setTab] = useState<CategoryTab>('focus')
   /** 「通知」「订阅」页里被用户展开的折叠组 */
   const [openStacks, setOpenStacks] = useState<Set<string>>(new Set())
+  /** 刚点开的那封未读邮件：读了以后先留在「未读」那一段里，点开别的才放回去 */
+  const [stickTop, setStickTop] = useState<string | null>(null)
   const [home, setHome] = useState(false)
   const [drawer, setDrawer] = useState(false)
   const [timePick, setTimePick] = useState<{ title: string; confirmLabel: string; onPick: (ts: number) => void } | null>(null)
@@ -407,14 +409,19 @@ export default function App() {
   const threadIds = useMemo(() => threadKeys(messages), [messages])
   const groups = groupByThread(inTab, threadsOn ? threadIds : null)
   const groupPinned = (g: MessageSummary[]): boolean => g.some((m) => pinnedKeys.has(keyOf(m)))
-  // 置顶的排在最前面（搜索结果和「稍后处理」里保持原来的顺序）
-  const orderedAll = activeQuery || virtualView ? groups : [...groups.filter(groupPinned), ...groups.filter((g) => !groupPinned(g))]
+  // 未读的集中排在最上面，然后是置顶的，再往下按时间（搜索结果和「稍后处理」里保持原来的顺序）。
+  // 刚点开的那封虽然已经变成已读，也先留在上面不动，等点开别的邮件再回到按时间的位置，免得一点它就从眼前跳走
+  const groupOnTop = (g: MessageSummary[]): boolean => g.some((m) => !m.seen || keyOf(m) === stickTop)
+  const topGroups = activeQuery || virtualView ? [] : groups.filter(groupOnTop)
+  const unreadTop = new Set(topGroups.map((g) => keyOf(g[0])))
+  const restGroups = groups.filter((g) => !unreadTop.has(keyOf(g[0])))
+  const orderedAll = activeQuery || virtualView ? groups : [...topGroups, ...restGroups.filter(groupPinned), ...restGroups.filter((g) => !groupPinned(g))]
   // 收件箱和「通知」「订阅」页：通知、订阅类里同一个发件人（GitHub 这种还要分到具体仓库）的邮件 3 封起折叠成一行，点开才展开
   const stackOn = smartInbox && tab !== 'all'
   // 收件箱（聚焦）里只有通知、订阅类的才折叠，真人来信永远单独一行
   // 没读的邮件不折叠：未读的永远单独一行摆在外面，一眼能看到是哪封
   const canStack = (g: MessageSummary[]): boolean =>
-    !groupPinned(g) && g.every((x) => x.seen || keyOf(x) === selectedKey) && (tab !== 'focus' || g[0].category !== 'personal')
+    !groupPinned(g) && !unreadTop.has(keyOf(g[0])) && g.every((x) => x.seen || keyOf(x) === selectedKey) && (tab !== 'focus' || g[0].category !== 'personal')
   const stackKeyOf = (m: MessageSummary): string => {
     const addr = (m.from[0]?.address || '').toLowerCase()
     const repo = /^\s*(?:(?:re|fwd?)\s*:\s*)?\[([^\]]{2,60})\]/i.exec(m.subject || '')
@@ -1096,6 +1103,9 @@ export default function App() {
 
     const markSeen = settings?.reading.markReadOnOpen !== false
     const summary = list.find((m) => keyOf(m) === k)
+    // 点开的是未读邮件：记住它，读完先留在「未读」那一段；点开的是已读邮件：上一封留着的可以放回去了
+    if (summary && !summary.seen) setStickTop(k)
+    else if (k !== stickTop) setStickTop(null)
     if (markSeen && summary && !summary.seen) {
       patchMessage(ref, { seen: true })
       adjustUnseen(ref, -1)
@@ -2748,9 +2758,11 @@ export default function App() {
 
   // 「撤销发送」的那封信有结果了
   handlers.current.onSendDone = ({ id, ok, error, draftId, replyTo }) => {
+    // 提示里带上主题，看得出是哪一封发出去了
+    const subject = toasts.find((x) => x.sendId === id)?.text
     setToasts((t) => t.filter((x) => x.sendId !== id))
     if (ok) {
-      notify('已发送')
+      notify(subject ? `已发送：${subject}` : '已发送')
       if (replyTo) patchMessage(replyTo, { answered: true })
       // 存进「已发送」要一小会儿，稍后再把会话里「我的回复」找一遍
       setTimeout(() => {
@@ -3419,6 +3431,7 @@ export default function App() {
               clearChecked()
             }}
             pinned={pinnedRows}
+            unreadTop={unreadTop}
             threads={threadInfo}
             priority={prioritySet}
             snoozed={data.snoozed}

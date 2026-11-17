@@ -101,6 +101,8 @@ interface Props {
   tab: CategoryTab
   onTab: (t: CategoryTab) => void
   pinned: Set<string>
+  /** 排在最上面「未读」那一段里的行（用每行第一封邮件的 key） */
+  unreadTop: Set<string>
   /** 重要发件人（小写邮箱地址） */
   priority: Set<string>
   snoozed: Record<string, SnoozeInfo>
@@ -758,7 +760,7 @@ export function MessageList(props: Props) {
                 : thread.names.join('、')
               : single
           const isPinned = props.pinned.has(k)
-          const group = props.searchActive ? '' : isPinned ? '已置顶' : dateGroup(m.date)
+          const group = props.searchActive ? '' : props.unreadTop.has(k) ? '未读' : isPinned ? '已置顶' : dateGroup(m.date)
           // 展开的折叠组里的邮件跟着组走，不再各自带日期标题（不然会出现「今天 → 最近一周 → 今天」）
           const inOpen = openStackKeys.has(k)
           const showGroup = !inOpen && group !== lastGroup

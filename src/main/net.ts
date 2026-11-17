@@ -105,25 +105,39 @@ export async function proxyRouteOrDirect(p: ProxySettings = getSettings().proxy)
  * 同时去连代理的数量上限：开机时七八个邮箱一起通过代理建立连接，有些代理软件会直接把多出来的断掉。
  * 排队时用户正等着的（打开邮件、看列表）排在前面，后台的（摘要、搜索）和监听新邮件的排在后面。
  */
-const SLOTS = 6
+// 用户正等着的连接（打开列表、打开邮件）最多同时 9 条；后台的和监听新邮件的只在不超过 4 条在连时才开始，
+// 给前者留出位置。以前不分先后一共 6 条：启动时 7 个邮箱的列表连接和后台连接一起挤，
+// 排在后面的几个邮箱要等前面的连完才轮到，列表多等三四秒
+const SLOTS_URGENT = 9
+const SLOTS_QUIET = 4
 export type SlotPriority = 0 | 1 | 2
 let busy = 0
 const waiting: Array<{ priority: SlotPriority; go: () => void }> = []
+const room = (priority: SlotPriority): boolean => busy < (priority === 0 ? SLOTS_URGENT : SLOTS_QUIET)
+/** 有空位了：按排队顺序（急的在前）放行所有现在能开始的 */
+function release(): void {
+  for (let i = 0; i < waiting.length; ) {
+    if (room(waiting[i].priority)) {
+      busy++
+      waiting.splice(i, 1)[0].go()
+    } else i++
+  }
+}
 export async function withProxySlot<T>(fn: () => Promise<T>, priority: SlotPriority = 0): Promise<T> {
-  if (busy >= SLOTS) {
+  if (room(priority)) busy++
+  else {
     await new Promise<void>((go) => {
       // 插到比自己优先级低的第一个人前面
       const at = waiting.findIndex((w) => w.priority > priority)
       if (at < 0) waiting.push({ priority, go })
       else waiting.splice(at, 0, { priority, go })
     })
-  } else busy++
+  }
   try {
     return await fn()
   } finally {
-    const next = waiting.shift()
-    if (next) next.go()
-    else busy--
+    busy--
+    release()
   }
 }
 

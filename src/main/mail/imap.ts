@@ -138,7 +138,8 @@ async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Prom
   const make = async (onStart?: () => void): Promise<ImapFlow> => {
     // 从取登录令牌开始算：令牌过期要先去 Google 换新的，这段时间也算在「连上用了多久」里
     const started = Date.now()
-    const client = new ImapFlow(await buildImapOptions(account))
+    const opts = await buildImapOptions(account)
+    const client = new ImapFlow(opts)
     // 一定要监听 error，否则断线时会让整个主进程崩溃
     client.on('error', (err: Error) => console.warn(`[imap ${account.email}]`, err.message))
     // 通过代理连的话排队连：一下子冒出十几条连接，有的代理软件会直接掐断。用户正等着的排在前面
@@ -149,7 +150,7 @@ async function openClient(account: Account, lane: Lane | 'watch' = 'main'): Prom
         }, lane === 'main' ? 0 : lane === 'bg' ? 1 : 2)
       : (onStart?.(), client.connect()))
     const took = Date.now() - started
-    if (took > 2000) console.warn(`[慢] 连上 ${account.email}（${lane}）用了 ${(took / 1000).toFixed(1)} 秒${account.useProxy ? '，走代理' : ''}`)
+    if (took > 2000) console.warn(`[慢] 连上 ${account.email}（${lane}）用了 ${(took / 1000).toFixed(1)} 秒${opts.proxy ? '，走代理' : account.useProxy ? '，代理端口没开、改直连' : ''}`)
     return client
   }
   // 睡眠唤醒、换网络之后，偶尔有一条连接会卡在握手上半分钟以上（日志里见过 37 秒），而同一时刻新开一条两三秒就通。
@@ -393,6 +394,10 @@ interface Watcher {
   /** 正在查新邮件；查的时候又有变化，查完再来一遍 */
   checking?: boolean
   again?: boolean
+  /** 正在建立连接 */
+  connecting?: boolean
+  /** 断线后正在等下一次重连：别等了，现在就连 */
+  kick?: () => void
 }
 
 // 有的邮箱（QQ 邮箱尤其明显）虽然支持「有新邮件就推送」，实际经常不推。所以每隔一会儿主动问一次，
@@ -447,7 +452,8 @@ export function startWatcher(
 
   const schedule = (proxyDown = false): void => {
     if (w.stopped) return
-    const delays = [5, 15, 30, 60, 120, 300]
+    // 最久隔 1 分钟再试（以前会越等越久，最长 5 分钟，这期间到的新邮件都要等重连上才提醒）
+    const delays = [5, 15, 30, 60]
     // 代理软件没开的时候不用越等越久：它一开就该马上连上，探一下代理端口很便宜
     const delay = proxyDown ? 10000 : delays[Math.min(w.retry, delays.length - 1)] * 1000
     if (!proxyDown) w.retry++
@@ -456,10 +462,14 @@ export function startWatcher(
 
   const run = async (): Promise<void> => {
     if (w.stopped) return
+    w.timer = undefined
     let client: ImapFlow
+    w.connecting = true
     try {
       client = await openClient(account, 'watch')
+      w.connecting = false
     } catch (err) {
+      w.connecting = false
       console.warn(`[watch ${account.email}] 连接失败`, (err as Error).message)
       schedule((err as { code?: string }).code === 'PROXY_DOWN')
       return
@@ -589,7 +599,18 @@ export function startWatcher(
     }
   }
 
+  w.kick = () => {
+    if (w.stopped || w.client || w.connecting || !w.timer) return
+    clearTimeout(w.timer)
+    w.retry = 0
+    void run()
+  }
   void run()
+}
+
+/** 窗口切回来、网络恢复时调用：断线后正在干等重连的监听，现在就去连，不用等到下一次重试 */
+export function kickWatchers(): void {
+  for (const w of watchers.values()) w.kick?.()
 }
 
 export function stopWatcher(accountId: string): void {
