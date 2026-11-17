@@ -789,6 +789,14 @@ export default function App() {
       let got: MessageSummary[] = []
       let failed = 0
       let firstError = ''
+      // 先在本机缓存里搜，马上显示；各个邮箱服务器的结果回来再合进去
+      const local = (await Promise.all(accounts.map((a) => api.cacheSearch(a.id, '', q).catch(() => [] as MessageSummary[])))).flat()
+      if (id !== listReq.current) return
+      if (local.length) {
+        got = local.sort(byDateDesc)
+        setMessages(got)
+        setTotal(got.length)
+      }
       await Promise.all(
         accounts.map((a) =>
           api
@@ -807,7 +815,8 @@ export default function App() {
         )
       )
       if (id !== listReq.current) return
-      if (failed && failed === accounts.length) setListError(firstError)
+      if (failed && failed === accounts.length && got.length) notify(`没能在服务器上搜索，现在显示的是本机里找到的。${firstError}`, 'error')
+      else if (failed && failed === accounts.length) setListError(firstError)
       else if (failed) notify(`有 ${failed} 个邮箱没能搜索。${firstError}`, 'error')
       setListLoading(false)
       return
@@ -821,9 +830,23 @@ export default function App() {
             if (!silent && msgs.length) setListLoading(false)
           }
         : undefined
+    // 在当前文件夹里搜索：也先显示本机缓存里找到的，服务器的结果回来再合进去
+    let localHits: MessageSummary[] = []
+    if (q && !silent) {
+      const targets = v.accountId === ALL ? unifiedTargets(v.folder) : [v]
+      localHits = (await Promise.all(targets.map((t) => api.cacheSearch(t.accountId, t.folder, q).catch(() => [] as MessageSummary[])))).flat().sort(byDateDesc)
+      if (id !== listReq.current) return
+      if (localHits.length) setMessages(localHits)
+    }
     try {
       const page = await fetchFirstPage(v, q, silent, onPart)
       if (id !== listReq.current) return
+      if (localHits.length) {
+        // 服务器没返回、但本机找到的也留着（有的邮箱服务器搜中文不灵）
+        const have = new Set(page.messages.map(keyOf))
+        page.messages = [...page.messages, ...localHits.filter((m) => !have.has(keyOf(m)))].sort(byDateDesc)
+        page.total = Math.max(page.total, page.messages.length)
+      }
       if (isVirtual(v.accountId)) {
         setMessages(page.messages)
         setHasMore(false)
@@ -856,6 +879,7 @@ export default function App() {
       if (id === listReq.current && !silent) {
         // 有缓存可看时不整屏报错，只提示一下现在看到的不是最新的
         if (fromCache) notify(`没能连上服务器，现在显示的是上次的内容。${(err as Error).message}`, 'error')
+        else if (localHits.length) notify(`没能在服务器上搜索，现在显示的是本机里找到的。${(err as Error).message}`, 'error')
         else setListError((err as Error).message)
       }
     } finally {

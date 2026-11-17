@@ -48,6 +48,19 @@ export function getCachedList(accountId: string, folder: string): MessagePage | 
   return read<MessagePage>(join(dirFor(accountId, 'lists'), hash(folder) + '.json'))
 }
 
+/** 这个账号缓存着的所有文件夹的最新一页（本机搜索用） */
+export function allCachedLists(accountId: string): MessagePage[] {
+  try {
+    const dir = dirFor(accountId, 'lists')
+    return readdirSync(dir)
+      .filter((f) => f.endsWith('.json'))
+      .map((f) => read<MessagePage>(join(dir, f)))
+      .filter((p): p is MessagePage => !!p && Array.isArray(p.messages))
+  } catch {
+    return []
+  }
+}
+
 export function putCachedList(accountId: string, folder: string, page: MessagePage): void {
   write(join(dirFor(accountId, 'lists'), hash(folder) + '.json'), page)
 }

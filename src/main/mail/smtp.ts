@@ -2,6 +2,7 @@
 
 import nodemailer from 'nodemailer'
 import MailComposer from 'nodemailer/lib/mail-composer'
+import SMTPConnection from 'nodemailer/lib/smtp-connection'
 import type Mail from 'nodemailer/lib/mailer'
 import type SMTPTransport from 'nodemailer/lib/smtp-transport'
 import * as socks from 'socks'
@@ -66,6 +67,109 @@ export async function testSmtp(account: Account, password?: string): Promise<voi
     t.close()
   } catch (err) {
     throw new Error('发信服务器（SMTP）：' + friendlyError(err, { host: account.smtp.host, useProxy: account.useProxy, oauth: account.auth.type === 'oauth2' ? account.auth.oauthProvider : undefined }))
+  }
+}
+
+// ---------- 提前连好发信服务器 ----------
+// 点「发送」后有几秒可以撤销。趁这几秒先把到发信服务器的连接建好、登录好，倒计时一结束直接把信交出去，
+// 省掉临发才去连接、握手、登录的那两三秒（走代理时更久）。提前连接没成、或者等的时候断了，就照老办法现连现发。
+
+interface Warm {
+  conn?: SMTPConnection
+  /** 连好并登录成功是 true */
+  ready: Promise<boolean>
+  dead: boolean
+}
+const warm = new Map<string, Warm>()
+
+function dropWarm(accountId: string, w?: Warm): void {
+  const cur = warm.get(accountId)
+  if (!cur || (w && cur !== w)) return
+  warm.delete(accountId)
+  cur.dead = true
+  try {
+    cur.conn?.close()
+  } catch {
+    // 已经断了
+  }
+}
+
+/** 点了「发送」、还在撤销倒计时里的时候调用 */
+export function warmSmtp(account: Account): void {
+  dropWarm(account.id)
+  const w: Warm = { dead: false, ready: Promise.resolve(false) }
+  w.ready = (async (): Promise<boolean> => {
+    const t = await createTransport(account)
+    // 代理的接法在 nodemailer 内部：发信前它把「怎么取到一条通到服务器的线路」放在这两个位置之一
+    const inner = (t as unknown as { transporter: { options: SMTPConnection.Options; getSocket: SocketGetter; getAuth(a: object): unknown } }).transporter
+    const own = (t as unknown as { getSocket?: SocketGetter | false }).getSocket
+    const getSocket: SocketGetter = typeof own === 'function' ? own : inner.getSocket.bind(inner)
+    const extra = await new Promise<Record<string, unknown> | false | undefined>((resolve, reject) =>
+      getSocket(inner.options, (err, so) => (err ? reject(err) : resolve(so)))
+    )
+    if (w.dead) {
+      const sock = extra ? (extra.connection as { destroy?(): void } | undefined) : undefined
+      sock?.destroy?.()
+      return false
+    }
+    const options = extra && extra.connection ? { ...inner.options, ...extra } : inner.options
+    const conn = new SMTPConnection(options)
+    w.conn = conn
+    conn.on('error', () => {
+      w.dead = true
+    })
+    conn.once('end', () => {
+      w.dead = true
+    })
+    await new Promise<void>((resolve, reject) => {
+      conn.once('error', reject)
+      conn.connect(() => resolve())
+    })
+    const auth = inner.getAuth({})
+    // allowsAuth：服务器在握手时说了支持登录（类型说明里没有这个字段）
+    if (auth && ((conn as unknown as { allowsAuth?: boolean }).allowsAuth || (options as { forceAuth?: boolean }).forceAuth)) {
+      await new Promise<void>((resolve, reject) =>
+        conn.login(auth as Parameters<SMTPConnection['login']>[0], (err) => (err ? reject(err) : resolve()))
+      )
+    }
+    return !w.dead
+  })().catch(() => {
+    dropWarm(account.id, w)
+    return false
+  })
+  warm.set(account.id, w)
+  // 一直没用上（撤销了、或者排到别的时间发）：一分钟后关掉，不占着服务器的连接
+  setTimeout(() => dropWarm(account.id, w), 60000).unref?.()
+}
+type SocketGetter = (options: unknown, cb: (err: Error | null, socketOptions?: Record<string, unknown> | false) => void) => void
+
+/** 有提前连好、现在还活着的连接就用它发，返回 true；没有就返回 false，由调用方照老办法发 */
+async function sendWarm(account: Account, envelope: { from: string | false; to: string[] }, raw: Buffer): Promise<boolean> {
+  const w = warm.get(account.id)
+  if (!w) return false
+  warm.delete(account.id)
+  const ok = await w.ready
+  const conn = w.conn
+  if (!ok || w.dead || !conn) {
+    try {
+      conn?.close()
+    } catch {
+      // 已经断了
+    }
+    return false
+  }
+  try {
+    await new Promise<void>((resolve, reject) => {
+      conn.once('error', reject)
+      conn.send(envelope as SMTPConnection.Envelope, raw, (err) => (err ? reject(err) : resolve()))
+    })
+    return true
+  } finally {
+    try {
+      conn.close()
+    } catch {
+      // 已经断了
+    }
   }
 }
 
@@ -147,6 +251,8 @@ export async function sendMessage(
   )
 
   const send = async (): Promise<void> => {
+    // 撤销倒计时里已经提前连好的话，直接用那条连接发
+    if (await sendWarm(account, envelope, raw)) return
     const t = await createTransport(account)
     try {
       await t.sendMail({ envelope, raw })

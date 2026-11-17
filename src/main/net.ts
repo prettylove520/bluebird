@@ -198,6 +198,12 @@ export async function httpFetch(
   throw lastError
 }
 
+/** 这个代理端口现在连得上吗（只探一下端口，不访问任何网站，很快） */
+export async function proxyAlive(p: ProxySettings): Promise<boolean> {
+  if (!p?.host || !p?.port) return false
+  return (await kindOf(p.host, p.port, true)) !== 'down'
+}
+
 /** 用给定的代理设置访问一个国外地址，返回耗时和识别出的类型。用来在设置页里测试代理是否可用 */
 export async function testProxy(p: ProxySettings): Promise<{ ms: number; kind: ProxyKind }> {
   if (!p.host || !p.port) throw new Error('请先填写代理地址和端口')

@@ -189,6 +189,25 @@ export function SettingsDialog(props: Props) {
   const [saving, setSaving] = useState(false)
   const [testing, setTesting] = useState(false)
   const [testResult, setTestResult] = useState<{ ok: boolean; text: string } | null>(null)
+  // 打开「网络」这一页时探一下已保存的代理端口：连不上就提示（程序这时其实在悄悄改用直连）
+  const [proxyDown, setProxyDown] = useState(false)
+  const savedProxy = props.settings.proxy
+  useEffect(() => {
+    if (tab !== 'proxy' || !savedProxy.enabled) {
+      setProxyDown(false)
+      return
+    }
+    let stale = false
+    api.proxyAlive(savedProxy).then(
+      (ok) => {
+        if (!stale) setProxyDown(!ok)
+      },
+      () => undefined
+    )
+    return () => {
+      stale = true
+    }
+  }, [tab, savedProxy.enabled, savedProxy.host, savedProxy.port])
   // 只有一个邮箱时直接展开它
   const [openAccount, setOpenAccount] = useState<string | null>(props.accounts.length === 1 ? props.accounts[0].id : null)
   // 默认设置（「恢复默认」用）
@@ -794,6 +813,12 @@ export function SettingsDialog(props: Props) {
                 <p className="muted small">
                   不知道填什么就点「自动检测」，它会先看 Windows 的系统代理设置，再找常见的代理端口（Clash 7890、v2rayN 10808/10809 等）。
                 </p>
+                {proxyDown && !testResult && (
+                  <p className="form-error">
+                    已保存的代理 {savedProxy.host}:{savedProxy.port} 现在连不上，程序正在改用直连（开着虚拟网卡时直连也能收发）。
+                    代理软件换了端口的话，点「自动检测」重新找；不打算用代理端口，就取消勾选「启用代理」。
+                  </p>
+                )}
                 {testResult && <p className={testResult.ok ? 'test-ok' : 'form-error'}>{testResult.text}</p>}
                 <div className="save-bar">
                   <button className="ghost-btn bordered" onClick={detectProxy} disabled={testing}>

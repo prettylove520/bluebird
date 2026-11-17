@@ -129,6 +129,8 @@ export const api = {
   printMail: (html: string, pdf: boolean, name: string) => call<boolean>('printMail', html, pdf, name),
   copyText: (text: string) => call<boolean>('copyText', text),
   searchAll: (accountId: string, q: string) => call<MessagePage>('searchAll', accountId, q),
+  /** 在本机缓存里搜（folder 传空字符串是搜所有文件夹）；不连服务器，马上返回 */
+  cacheSearch: (accountId: string, folder: string, q: string) => call<MessageSummary[]>('cacheSearch', accountId, folder, q),
   contacts: (q: string) => call<Contact[]>('contacts', q),
   contactList: () => call<(Contact & { sent: boolean; last: number })[]>('contactList'),
   contactRemove: (address: string) => call<void>('contactRemove', address),
@@ -165,6 +167,8 @@ export const api = {
   clearHomeImage: () => call<boolean>('clearHomeImage'),
   setControls: (light: boolean) => call<boolean>('setControls', light),
   testProxy: (p: ProxySettings) => call<{ ms: number; kind: 'socks5' | 'http' }>('testProxy', p),
+  /** 只探一下代理端口通不通（很快，不访问网站） */
+  proxyAlive: (p: ProxySettings) => call<boolean>('proxyAlive', p),
   detectProxy: () => call<{ host: string; port: number; kind: 'socks5' | 'http'; source: 'system' | 'scan' } | null>('detectProxy'),
   openDataDir: () => call<boolean>('openDataDir'),
   badge: (dataUrl: string, count: number) => call<boolean>('badge', dataUrl, count),

@@ -22,7 +22,7 @@ import { getData } from '../userdata'
 import { app } from 'electron'
 import { join } from 'path'
 import { readJsonSafe, writeJsonSafe } from '../jsonfile'
-import { loadPreviews, savePreviews } from '../cache'
+import { allCachedLists, getCachedFolders, getCachedList, loadPreviews, savePreviews } from '../cache'
 
 const PAGE_SIZE = 50
 /** 核对未读时逐封看标记的最大封数 */
@@ -596,6 +596,44 @@ function containsTerm(text: string, q: string): boolean {
 function matchesLocal(m: MessageSummary, q: string): boolean {
   const hay = [m.subject, ...m.from.flatMap((a) => [a.name, a.address]), ...m.to.flatMap((a) => [a.name, a.address])]
   return hay.some((t) => containsTerm(t || '', q))
+}
+
+/**
+ * 先在本机缓存里搜：每个文件夹最新的一页邮件（主题、发件人、收件人，加上已经取过的正文摘要）。
+ * 不用连服务器，马上有结果；界面先显示这些，服务器的结果回来再合进去。folder 传空字符串是搜所有文件夹
+ */
+export function searchCached(accountId: string, folder: string, query: string): MessageSummary[] {
+  const q = query.trim()
+  if (!q) return []
+  ensurePreviews()
+  let pages: MessagePage[]
+  if (folder) {
+    const one = getCachedList(accountId, folder)
+    pages = one ? [one] : []
+  } else pages = allCachedLists(accountId)
+  // 搜所有文件夹时，和服务器搜索一样不看已删除、垃圾邮件、草稿
+  const skip = new Set(
+    folder
+      ? []
+      : (folderCache.get(accountId) ?? getCachedFolders(accountId) ?? [])
+          .filter((f) => f.specialUse === 'trash' || f.specialUse === 'junk' || f.specialUse === 'drafts')
+          .map((f) => f.path)
+  )
+  const seen = new Set<string>()
+  const hits: MessageSummary[] = []
+  for (const page of pages) {
+    for (const m of page.messages) {
+      if (!m || m.accountId !== accountId || skip.has(m.folder)) continue
+      const key = `${m.folder}|${m.uid}`
+      if (seen.has(key)) continue
+      const snippet = previewCache.get(cacheKey(accountId, m.folder, m.uid)) || ''
+      if (matchesLocal(m, q) || (snippet && containsTerm(snippet, q))) {
+        seen.add(key)
+        hits.push(m)
+      }
+    }
+  }
+  return hits.sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 100)
 }
 
 /** 邮件头对不上的，再下载正文开头一段核对（服务器的正文搜索只是「包含」，不一定真是这个词） */

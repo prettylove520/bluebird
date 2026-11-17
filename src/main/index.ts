@@ -43,7 +43,7 @@ import { detect } from './presets'
 import { cancelOAuth, getAccessToken } from './oauth'
 import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
-import { detectProxy, httpFetch, testProxy } from './net'
+import { detectProxy, httpFetch, testProxy, proxyAlive } from './net'
 import { isKnownSender, listContacts, removeContact, searchContacts } from './contacts'
 import { aiInfo, listModels, runAi, testAi, verifyKey } from './ai'
 import { aiHost } from '../shared/ai'
@@ -80,11 +80,12 @@ import {
   searchMessages,
   setFlag,
   markSeenSoon,
+  searchCached,
   resumePendingSeen,
   applyPendingSeen,
   summarizeUids
 } from './mail/service'
-import { sendMessage } from './mail/smtp'
+import { sendMessage, warmSmtp } from './mail/smtp'
 import { applyRules, cleanRules, runOnInbox } from './rules'
 
 const APP_ID = 'com.bluebird.desktop'
@@ -879,6 +880,9 @@ function registerIpc(): void {
       draftId: typeof draftId === 'string' ? draftId : undefined
     }
     liveUndo.add(item.id)
+    // 趁撤销倒计时这几秒，先把到发信服务器的连接建好
+    const sender = getAccount(message.accountId)
+    if (sender) warmSmtp(sender)
     const data = updateData({ scheduled: [...getData().scheduled, item] })
     setTimeout(() => {
       const current = getData().scheduled.find((s) => s.id === item.id)
@@ -956,6 +960,7 @@ function registerIpc(): void {
 
   handle('proxy:test', (proxy: ProxySettings) => testProxy(proxy))
   handle('proxy:detect', () => detectProxy())
+  handle('proxy:alive', (proxy: ProxySettings) => proxyAlive(proxy))
 
   // 任务栏图标右下角的未读数小红点（Windows）；托盘提示里也写上
   handle('app:badge', (dataUrl: string, count: number) => {
@@ -1037,6 +1042,16 @@ function registerIpc(): void {
     return cacheSize()
   })
   handle('mail:search', (accountId: string, folder: string, q: string) => searchMessages(need(accountId), folder, q))
+  // 本机缓存里先搜一遍（不连服务器，马上有结果）
+  handle('cache:search', (accountId: string, folder: string, q: string) => {
+    need(accountId)
+    const f = String(folder || '')
+    const hits = searchCached(accountId, f, String(q || ''))
+    // 按文件夹把「已读但还没告诉服务器」的补上
+    const byFolder = new Map<string, typeof hits>()
+    for (const m of hits) byFolder.set(m.folder, [...(byFolder.get(m.folder) ?? []), m])
+    return [...byFolder.entries()].flatMap(([path, messages]) => applyPendingSeen(accountId, path, { messages }).messages)
+  })
   handle('mail:previews', (accountId: string, folder: string, uids: number[]) => getPreviews(need(accountId), folder, uids))
   handle('mail:get', async (accountId: string, folder: string, uid: number, markSeen?: boolean) => {
     const account = need(accountId)
