@@ -61,7 +61,7 @@ const defaultSettings: Settings = {
     threads: true,
     gatekeeper: true
   },
-  compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5 },
+  compose: { quoteOnReply: true, fontSize: 14, warnEmptySubject: true, undoSeconds: 5, syncDrafts: true },
   notify: { enabled: true, onlyPersonal: false, sound: true, showContent: true, quietEnabled: false, quietStart: '22:00', quietEnd: '08:00', checkSeconds: 15 },
   translate: { target: 'ZH' },
   ai: { enabled: false, preset: 'deepseek', style: 'openai', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-flash', customName: '', language: 'zh', tone: 'natural' }

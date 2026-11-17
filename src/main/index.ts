@@ -26,7 +26,7 @@ import { buildReply, parseInvite } from './calendar'
 import { randomUUID } from 'crypto'
 import { BlockList, isIP } from 'net'
 import { lookup } from 'dns/promises'
-import { dropStateBackup, forgetAccountData, forgetFolderData, getData, updateData } from './userdata'
+import { dropStateBackup, forgetAccountData, forgetFolderData, getData, updateData, onDraftsChange } from './userdata'
 import {
   cacheSize,
   clearCache,
@@ -42,6 +42,7 @@ import { addOAuthAccount, addPasswordAccount, listPresets, reauthAccount, remove
 import { detect } from './presets'
 import { cancelOAuth, getAccessToken } from './oauth'
 import { buildDiagnostics } from './diagnostics'
+import { scheduleDraftSync } from './draftsync'
 import { cleanAi, dataDir, defaultSettingsCopy, getAccount, getAccounts, getSettings, getTranslateKey, saveSettings, setAiKey, setTranslateKey } from './store'
 import { translateTexts, translateUsage } from './translate'
 import { detectProxy, httpFetch, testProxy, proxyAlive } from './net'
@@ -918,8 +919,11 @@ function registerIpc(): void {
   handle('settings:defaults', () => defaultSettingsCopy())
   handle('settings:save', (settings: Settings) => {
     const before = JSON.stringify(getSettings().proxy)
+    const draftsBefore = getSettings().compose.syncDrafts
     saveSettings(settings)
     applySettings()
+    // 打开或关掉了「草稿同步到服务器」：马上补传或删掉服务器上的那份
+    if (getSettings().compose.syncDrafts !== draftsBefore) scheduleDraftSync(1000)
     // 只有代理变了才需要重新建立连接
     if (JSON.stringify(getSettings().proxy) !== before) {
       for (const a of getAccounts()) dropClient(a.id)
@@ -1600,6 +1604,9 @@ app.whenReady().then(() => {
   applySettings()
   createWindow()
   watchAll()
+  // 草稿同步到服务器：草稿一有变化就（停几秒后）上传；启动后也补传一次上次没传成的
+  onDraftsChange(() => scheduleDraftSync())
+  scheduleDraftSync(30000)
   // 上次关掉程序时还没来得及告诉服务器的「已读」，等连接建好后接着发
   setTimeout(() => resumePendingSeen((id) => getAccount(id)), 20000)
   // 启动后稍等一下处理错过的定时任务，之后每 20 秒检查一次

@@ -1352,6 +1352,45 @@ export async function archiveMessage(account: Account, folder: string, uids: Uid
   return true
 }
 
+/** 服务器草稿文件夹的路径；没有就返回 undefined */
+export async function draftsFolder(account: Account): Promise<string | undefined> {
+  return findSpecial(account, 'drafts')
+}
+
+/**
+ * 把草稿的一个新版本存进服务器的草稿文件夹，再彻底删掉旧版本（不是移到「已删除」）。
+ * 返回新版本在服务器上的编号；服务器没告诉编号时，用 Message-ID 搜一下
+ */
+export async function putDraft(account: Account, folder: string, raw: Buffer, messageId: string | undefined, oldUid?: number): Promise<number | undefined> {
+  return withClient(account, async (client) => {
+    const res = (await client.append(folder, raw, ['\\Draft', '\\Seen'])) as { uid?: number } | false
+    let uid = res && typeof res.uid === 'number' ? res.uid : undefined
+    const lock = await client.getMailboxLock(folder)
+    try {
+      if (!uid && messageId) {
+        const hits = await client.search({ header: { 'message-id': messageId } }, { uid: true })
+        if (hits && hits.length) uid = Math.max(...hits)
+      }
+      if (oldUid && oldUid !== uid) await client.messageDelete(String(oldUid), { uid: true })
+    } finally {
+      lock.release()
+    }
+    return uid
+  }, 'bg')
+}
+
+/** 彻底删掉服务器草稿文件夹里的一份草稿 */
+export async function dropDraft(account: Account, folder: string, uid: number): Promise<void> {
+  await withMailbox(
+    account,
+    folder,
+    async (client) => {
+      await client.messageDelete(String(uid), { uid: true })
+    },
+    'bg'
+  )
+}
+
 export async function appendMessage(account: Account, folder: string, raw: Buffer, flags: string[]): Promise<void> {
   await withClient(account, async (client) => {
     await client.append(folder, raw, flags)

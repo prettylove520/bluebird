@@ -622,6 +622,9 @@ export function SettingsDialog(props: Props) {
                     <option value="30">30 秒</option>
                   </select>
                 </Row>
+                <Row title="草稿同步到邮箱" hint="写了一半的信同时存到邮箱服务器的「草稿」文件夹，手机和网页邮箱里也能看到；发出或删除后，服务器上的那份也会删掉">
+                  <Switch label="草稿同步到邮箱" checked={compose.syncDrafts !== false} onChange={(syncDrafts) => setCompose({ syncDrafts })} />
+                </Row>
                 <Row title="没写主题时提醒" hint="发送没有主题的邮件前先提示一次">
                   <Switch label="没写主题时提醒" checked={compose.warnEmptySubject} onChange={(warnEmptySubject) => setCompose({ warnEmptySubject })} />
                 </Row>

@@ -97,6 +97,8 @@ export interface ComposeSettings {
   warnEmptySubject: boolean
   /** 点发送后等几秒再真正发出，期间可以撤销；0 表示立即发出 */
   undoSeconds: number
+  /** 草稿同时存到邮箱服务器的「草稿」文件夹，手机和网页邮箱里也能看到（默认开） */
+  syncDrafts?: boolean
 }
 
 export interface NotifySettings {

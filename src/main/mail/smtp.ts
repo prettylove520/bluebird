@@ -190,35 +190,40 @@ function sendError(err: unknown, account: Account): Error {
   })
 }
 
-export async function sendMessage(
+/**
+ * 把一封要发的信组装成完整的邮件原文。发信、存「已发送」、存草稿都用它，保证是同一份。
+ * draft：存草稿用——没有收件人也行；附件找不到就跳过而不是报错；加上草稿的编号和每个版本独有的 Message-ID
+ */
+export async function buildRaw(
   account: Account,
   msg: OutgoingMessage,
-  hooks?: {
-    /** 服务器已经收下这封信（之后存「已发送」等收尾工作还没做） */
-    onAccepted?: () => void
-    /** 这封信不是用户自己写给谁的（比如退订邮件），收件人不记进联系人 */
-    skipContacts?: boolean
-  }
-): Promise<{ savedToSent: boolean }> {
+  draft?: { id: string; version: number }
+): Promise<{ envelope: { from: string | false; to: string[] }; raw: Buffer; messageId?: string }> {
   const to = normalizeRecipients(msg.to)
   const cc = normalizeRecipients(msg.cc)
   const bcc = normalizeRecipients(msg.bcc)
-  if (!to && !cc && !bcc) throw new Error('请至少填写一个收件人')
 
   const attachments: Mail.Attachment[] = []
   for (const a of msg.attachments) {
     if (a.path) {
       // 草稿或定时邮件是从别的电脑的备份里恢复来的话，附件原来的位置在这台电脑上不存在
-      if (!existsSync(a.path)) throw new Error(`附件「${a.filename}」在这台电脑上找不到了，请重新添加后再发送`)
+      if (!existsSync(a.path)) {
+        if (draft) continue
+        throw new Error(`附件「${a.filename}」在这台电脑上找不到了，请重新添加后再发送`)
+      }
       attachments.push({ filename: a.filename, path: a.path })
     } else if (a.fromMessage) {
       // 转发的附件来自原邮件所在的账号，不一定是现在发信的账号
       const source = getAccount(a.fromMessage.accountId)
-      if (!source) throw new Error('原邮件所在的账号已被删除，无法转发附件')
+      if (!source) {
+        if (draft) continue
+        throw new Error('原邮件所在的账号已被删除，无法转发附件')
+      }
       let att: Awaited<ReturnType<typeof getAttachment>>
       try {
         att = await getAttachment(source, a.fromMessage.folder, a.fromMessage.uid, a.fromMessage.index)
       } catch (err) {
+        if (draft) continue
         // 取原邮件附件时连不上服务器，也算「过一会儿再试可能就好」
         const text = (err as Error).message
         throw Object.assign(new Error(`没能取到要转发的附件：${text}`), { retryable: /连接服务器失败|找不到服务器/.test(text) })
@@ -243,12 +248,39 @@ export async function sendMessage(
   // 回复日历邀请：除了文字，再附上一份日历回复，对方的日历程序才能识别
   if (msg.calendarReply) (options as Mail.Options & { icalEvent?: unknown }).icalEvent = { method: 'REPLY', content: msg.calendarReply }
 
+  let messageId: string | undefined
+  if (draft) {
+    // 每存一个版本换一个 Message-ID：服务器不支持返回新邮件编号时，靠它找到刚存进去的那一份
+    messageId = `<draft.${draft.id}.${draft.version}@bluebird.local>`
+    options.messageId = messageId
+    options.headers = { 'X-Bluebird-Draft': draft.id }
+  }
+
   // 先在本地生成完整邮件，这样发出去的和存到「已发送」的是同一份
   const node = new MailComposer(options).compile()
   const envelope = node.getEnvelope()
   const raw = await new Promise<Buffer>((resolve, reject) =>
     node.build((err, buf) => (err ? reject(err) : resolve(buf)))
   )
+  return { envelope, raw, messageId }
+}
+
+export async function sendMessage(
+  account: Account,
+  msg: OutgoingMessage,
+  hooks?: {
+    /** 服务器已经收下这封信（之后存「已发送」等收尾工作还没做） */
+    onAccepted?: () => void
+    /** 这封信不是用户自己写给谁的（比如退订邮件），收件人不记进联系人 */
+    skipContacts?: boolean
+  }
+): Promise<{ savedToSent: boolean }> {
+  const to = normalizeRecipients(msg.to)
+  const cc = normalizeRecipients(msg.cc)
+  const bcc = normalizeRecipients(msg.bcc)
+  if (!to && !cc && !bcc) throw new Error('请至少填写一个收件人')
+
+  const { envelope, raw } = await buildRaw(account, msg)
 
   const send = async (): Promise<void> => {
     // 撤销倒计时里已经提前连好的话，直接用那条连接发

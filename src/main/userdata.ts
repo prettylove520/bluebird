@@ -38,9 +38,16 @@ function persist(): void {
 }
 
 /** 用给定的字段覆盖对应部分，返回更新后的完整数据 */
+let draftsListener: (() => void) | undefined
+/** 草稿或待发送队列有变化时通知（用来把草稿同步到服务器） */
+export function onDraftsChange(cb: () => void): void {
+  draftsListener = cb
+}
+
 export function updateData(patch: Partial<UserData>): UserData {
   data = { ...getData(), ...patch }
   persist()
+  if (patch.drafts || patch.scheduled) draftsListener?.()
   return data
 }
 
