@@ -54,18 +54,24 @@ export function Rail(props: Props) {
             key={it.id}
             className={`rail-btn ${props.active === it.id ? 'active' : ''} ${it.gap ? 'gap' : ''}`}
             onClick={() => props.onGo(it.id)}
-            title={it.label}
-            aria-label={it.label}
+            title={badge(it.id) > 0 ? `${it.label}（${badge(it.id)}）` : it.label}
+            aria-label={badge(it.id) > 0 ? `${it.label}，${badge(it.id)}` : it.label}
             aria-current={props.active === it.id ? 'page' : undefined}
           >
             <Icon name={it.icon} size={22} />
-            {badge(it.id) > 0 && <span className={`rail-badge ${it.id === 'inbox' ? 'strong' : ''}`}>{badge(it.id) > 99 ? '99+' : badge(it.id)}</span>}
+            {/* 只有收件箱显示数字；其他位置有东西时只亮一个小圆点，数字在悬停提示里 */}
+            {badge(it.id) > 0 &&
+              (it.id === 'inbox' ? (
+                <span className="rail-badge strong">{badge(it.id) > 99 ? '99+' : badge(it.id)}</span>
+              ) : (
+                <span className="rail-dot" aria-hidden="true" />
+              ))}
           </button>
         ))}
         {props.scheduledCount > 0 && (
-          <button className="rail-btn" onClick={props.onScheduled} title="定时发送" aria-label="定时发送">
+          <button className="rail-btn" onClick={props.onScheduled} title={`定时发送（${props.scheduledCount}）`} aria-label={`定时发送，${props.scheduledCount}`}>
             <Icon name="calendarClock" size={22} />
-            <span className="rail-badge">{props.scheduledCount}</span>
+            <span className="rail-dot" aria-hidden="true" />
           </button>
         )}
         <button className="rail-btn" onClick={props.onMore} title="全部账号和文件夹" aria-label="全部账号和文件夹">
