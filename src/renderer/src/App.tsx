@@ -3304,6 +3304,7 @@ export default function App() {
             }}
             pinned={pinnedRows}
             unreadTop={unreadTop}
+            localDrafts={unifiedUse === 'drafts' || folder?.specialUse === 'drafts' ? { count: draftList.length, onOpen: () => setShowDrafts(true) } : undefined}
             threads={threadInfo}
             priority={prioritySet}
             snoozed={data.snoozed}

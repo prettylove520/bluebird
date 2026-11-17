@@ -5300,3 +5300,31 @@ html[data-motion='off'] *::after {
   font-size: var(--fs-sm);
   opacity: 0.75;
 }
+
+/* 草稿箱里提示「本机还有几封草稿」：本机的草稿不一定在服务器的草稿箱里（QQ 邮箱不让程序存），点一下打开本机草稿列表 */
+.local-drafts {
+  width: calc(100% - 16px);
+  margin: 6px 8px 8px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--accent-soft);
+  color: var(--ink);
+  font: inherit;
+  font-size: var(--fs-md);
+  text-align: left;
+  cursor: pointer;
+}
+.local-drafts span {
+  flex: 1;
+}
+.local-drafts b {
+  color: var(--accent);
+  font-weight: 600;
+}
+.local-drafts:hover {
+  filter: brightness(0.97);
+}

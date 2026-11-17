@@ -97,6 +97,8 @@ interface Props {
   /** 智能收件箱的分类页；不传就不显示 */
   /** 列表是空的时候显示的话（不传就是「这里没有邮件」） */
   emptyText?: string
+  /** 在草稿箱里：本机还有几封写了一半的草稿（它们只在本机，或者服务器不让存），点一下打开草稿列表 */
+  localDrafts?: { count: number; onOpen: () => void }
   tabs?: { id: CategoryTab; label: string; unread: number }[]
   tab: CategoryTab
   onTab: (t: CategoryTab) => void
@@ -687,7 +689,14 @@ export function MessageList(props: Props) {
             </button>
           </div>
         )}
-        {!props.loading && !props.loadingMore && !props.error && !messages.length && !props.bundles.length && (
+        {props.localDrafts && props.localDrafts.count > 0 && (
+          <button className="local-drafts" onClick={props.localDrafts.onOpen}>
+            <Icon name="drafts" size={16} />
+            <span>本机还有 {props.localDrafts.count} 封草稿（写了一半、还没发出）</span>
+            <b>打开</b>
+          </button>
+        )}
+        {!props.loading && !props.loadingMore && !props.error && !messages.length && !props.bundles.length && !props.localDrafts?.count && (
           <div className="list-state">
             <Icon name="check" size={28} />
             <p>{props.searchActive ? '没有找到相关邮件' : props.emptyText || '这里没有邮件'}</p>

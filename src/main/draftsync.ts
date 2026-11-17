@@ -35,6 +35,14 @@ let running = false
 let again = false
 /** 失败的草稿：过一会儿再试，免得网络不好时一直重试 */
 const failedAt = new Map<string, number>()
+/**
+ * 服务器明确不让程序往草稿箱里存信的邮箱（QQ 邮箱会回「Mail already saved to Sent by SMTP, no need to APPEND again」）：
+ * 记下来不再重试，这些邮箱的草稿只留在本机
+ */
+const skipFile = (): string => join(app.getPath('userData'), 'draft-sync-skip.json')
+let skip: string[] | null = null
+const skipped = (): string[] => (skip ??= readJsonSafe<string[]>(skipFile(), []))
+const REFUSED = /no need to APPEND|APPEND (?:is )?(?:not allowed|denied|forbidden)|not permitted/i
 
 export function syncEnabled(): boolean {
   return getSettings().compose.syncDrafts !== false
@@ -102,7 +110,7 @@ async function syncOnce(): Promise<void> {
       continue
     }
     const account = getAccount(d.accountId)
-    if (!account) continue
+    if (!account || skipped().includes(account.id)) continue
     try {
       const folder = await draftsFolder(account)
       if (!folder) continue
@@ -133,8 +141,19 @@ async function syncOnce(): Promise<void> {
       save()
       failedAt.delete(d.id)
     } catch (err) {
+      const text = (err as Error).message
+      if (REFUSED.test(text)) {
+        skipped().push(account.id)
+        try {
+          writeJsonSafe(skipFile(), skipped())
+        } catch {
+          // 记不下来，下次启动会再试一次
+        }
+        console.warn(`[草稿同步] ${account.email} 的服务器不允许程序往草稿箱存信（${text}），这个邮箱的草稿只保存在本机`)
+        continue
+      }
       failedAt.set(d.id, Date.now())
-      console.warn(`[草稿同步] ${account.email} 存草稿到服务器失败，过一会儿再试：${(err as Error).message}`)
+      console.warn(`[草稿同步] ${account.email} 存草稿到服务器失败，过一会儿再试：${text}`)
       scheduleDraftSync(60000)
     }
   }
