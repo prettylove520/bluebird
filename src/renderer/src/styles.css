@@ -2756,7 +2756,7 @@ kbd {
 }
 .app.wide .quick-reply > * {
   width: 100%;
-  max-width: 760px;
+  max-width: 960px;
 }
 .reader-back {
   position: absolute;
@@ -3016,9 +3016,9 @@ kbd {
   border-color: var(--line);
 }
 
-/* 阅读页（1.3.0）：内容居中成一列，最宽 760px；不再套卡片 */
+/* 阅读页（1.3.1）：内容居中成一列，最宽 960px；不再套卡片 */
 .mail-wrap {
-  max-width: 816px;
+  max-width: 1016px;
   margin: 0 auto;
   padding: 6px 28px 20px;
 }
@@ -3097,7 +3097,7 @@ kbd {
 }
 /* 底部的快捷回复和回复框也收到同一列 */
 .reader .quick-reply > * {
-  max-width: 760px;
+  max-width: 960px;
   margin-left: auto;
   margin-right: auto;
 }
