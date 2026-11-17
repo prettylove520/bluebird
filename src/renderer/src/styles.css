@@ -1764,18 +1764,45 @@ select:focus {
 }
 
 /* 紧凑列表 */
+/* 紧凑：比默认再低一档（1.2.0 起默认头像已经是 32px，紧凑缩到 24px） */
 .compact .msg {
-  padding-top: 7px;
-  padding-bottom: 7px;
+  padding-top: 5px;
+  padding-bottom: 5px;
 }
 .compact .avatar-slot,
 .compact .avatar-slot .avatar {
-  width: 32px;
-  height: 32px;
-  font-size: var(--fs-md);
+  width: 24px;
+  height: 24px;
+  font-size: var(--fs-xs);
 }
 .compact .unread-dot {
-  top: 19px;
+  top: 13px;
+}
+/* 宽列表（单行）里紧凑：行高从约 44px 降到约 34px */
+.list-pane.wide.compact .msg {
+  padding-top: 2px;
+  padding-bottom: 2px;
+  gap: 12px;
+}
+.list-pane.wide.compact .avatar-slot,
+.list-pane.wide.compact .avatar-slot .avatar {
+  width: 22px;
+  height: 22px;
+  font-size: var(--fs-2xs);
+}
+.list-pane.wide.compact .msg-from,
+.list-pane.wide.compact .msg-subject {
+  font-size: var(--fs-md);
+}
+.compact .bundle.stack {
+  min-height: 34px;
+  padding-top: 3px;
+  padding-bottom: 3px;
+}
+.compact .bundle.stack .bundle-icon {
+  width: 22px;
+  height: 22px;
+  font-size: var(--fs-2xs);
 }
 .compact .msg-preview {
   -webkit-line-clamp: 1;
