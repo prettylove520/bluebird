@@ -453,13 +453,12 @@ export function MessageList(props: Props) {
           <span className="bundle-icon" style={{ background: avatarColor(s.seed || s.label), color: '#fff' }}>
             {(s.label.trim()[0] || '?').toUpperCase()}
           </span>
-          <span className="bundle-label">
-            {s.label}
-            <em>{s.count}</em>
-            {s.unread > 0 && <b className="bundle-unread">{s.unread} 未读</b>}
-          </span>
+          <span className="bundle-label">{s.label}</span>
           <span className="bundle-senders">
-            <span className={`bundle-sender ${s.unread ? 'bundle-unread-sub' : ''}`}>{s.unread ? `未读：${s.sub}` : s.sub}</span>
+            <span className="bundle-sender" title={s.seed}>
+              共 {s.count} 封 · 最新：{s.members[0]?.subject || '（无主题）'}
+            </span>
+            {s.unread > 0 && <b className="bundle-unread">{s.unread} 未读</b>}
           </span>
           <span className="bundle-chev">
             <Icon name="chevron" size={16} />

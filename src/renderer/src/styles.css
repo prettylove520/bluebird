@@ -9,7 +9,9 @@
   --bg-hover: #f2f4f7;
   --ink: #1d1d1f;
   --ink-2: #5d6168;
-  --ink-3: #9a9da5;
+  --ink-3: #686c73;
+  /* 列表里选中的那一行：中性灰，不和未读的蓝色混在一起 */
+  --select-row: #eceef1;
   --line: #ebedf0;
   --accent: #2f73f6;
   --accent-hover: #1f62e0;
@@ -66,7 +68,8 @@
     --bg-hover: #2e2e32;
     --ink: #ececee;
     --ink-2: #a8abb2;
-    --ink-3: #74777e;
+    --ink-3: #9a9da4;
+    --select-row: #38393f;
     --line: #333338;
     --accent: #4b8bff;
     --accent-hover: #6a9fff;
@@ -619,7 +622,7 @@ select:focus {
   background: var(--bg-hover);
 }
 .msg.selected {
-  background: var(--select);
+  background: var(--select-row);
 }
 
 .unread-dot {
@@ -637,14 +640,14 @@ select:focus {
 
 .avatar {
   flex: none;
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   border-radius: 50%;
   display: grid;
   place-items: center;
   color: #fff;
   font-weight: 600;
-  font-size: var(--fs-lg);
+  font-size: var(--fs-md);
 }
 .avatar.large {
   width: 44px;
@@ -1708,8 +1711,8 @@ select:focus {
 .avatar-slot {
   position: relative;
   flex: none;
-  width: 38px;
-  height: 38px;
+  width: 32px;
+  height: 32px;
   cursor: pointer;
 }
 .check-mark {
@@ -5024,17 +5027,15 @@ html[data-motion='off'] *::after {
 /* ---------- 新邮件到达的提示 ---------- */
 @keyframes bb-arrive {
   0%,
-  65% {
-    background: color-mix(in srgb, var(--accent) 16%, transparent);
-    box-shadow: inset 3px 0 0 var(--accent);
+  40% {
+    background: var(--accent-soft);
   }
   100% {
     background: transparent;
-    box-shadow: inset 3px 0 0 transparent;
   }
 }
 .list .msg.arrived {
-  animation: bb-row 0.22s var(--ease-out) backwards, bb-arrive 8s ease-out;
+  animation: bb-row 0.22s var(--ease-out) backwards, bb-arrive 2.4s ease-out;
 }
 @keyframes bb-bundle {
   0%,
@@ -5113,26 +5114,19 @@ html[data-motion='off'] *::after {
   letter-spacing: 0.2px;
 }
 
-/* ---------- 未读和新邮件更醒目（1.0.23） ---------- */
-/* 未读：整行淡淡的主题色底 + 左边一条主题色竖线 + 更大的圆点；已读的行文字放淡，两者一眼能分开 */
-.list .msg.unread {
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
-  box-shadow: inset 3px 0 0 var(--accent);
-}
-.list .msg.unread:hover {
-  background: color-mix(in srgb, var(--accent) 12%, var(--bg-hover));
-}
-.list .msg.unread.selected {
-  background: var(--select);
-}
+/* ---------- 列表里的状态（1.2.0 重新分工） ----------
+   未读：左边一个主题色圆点 + 粗体，只用这两样
+   选中：中性灰底（--select-row），和未读彻底分开
+   新到：底色淡蓝闪一下（bb-arrive），2 秒多淡出，不常驻
+   邮箱：行首 3px 彩色细条，只在「所有收件箱」里出现，悬停看是哪个邮箱 */
 .msg.unread .unread-dot {
-  width: 9px;
-  height: 9px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
+  width: 8px;
+  height: 8px;
+  background: var(--accent);
 }
-/* 宽列表里头像紧挨着左边，圆点会压到头像上；有左边竖线和底色就够了，圆点不画 */
-.list-pane.wide .msg .unread-dot {
-  display: none;
+.list-pane.wide .unread-dot {
+  left: 5px;
+  margin-top: -4px;
 }
 .list-pane.wide .msg.unread .msg-from,
 .list-pane.wide .msg.unread .msg-subject {
@@ -5142,73 +5136,64 @@ html[data-motion='off'] *::after {
 .list-pane.wide .msg:not(.unread) .msg-from,
 .list-pane.wide .msg:not(.unread) .msg-subject {
   font-weight: 400;
-  color: var(--ink-2);
-}
-.list .msg:not(.unread) .msg-preview {
-  opacity: 0.8;
-}
-
-/* 新到的（这次打开程序后收到、还没读）：行首一个「新」字，底色更深，读了才消失 */
-.list .msg.new {
-  background: color-mix(in srgb, var(--accent) 13%, transparent);
+  color: var(--ink);
 }
 .new-tag {
-  flex: none;
-  display: inline-grid;
-  place-items: center;
-  margin-right: 6px;
-  padding: 0 6px;
-  height: 18px;
-  border-radius: var(--radius-xs);
-  background: var(--danger);
-  color: #fff;
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  line-height: 1;
-  vertical-align: 1px;
+  display: none;
 }
-.msg.new .unread-dot {
-  background: var(--danger);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--danger) 25%, transparent);
-  animation: bb-new-dot 1.6s ease-in-out 4;
+.list .acct-tag {
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  height: auto;
+  max-width: none;
+  padding: 0;
+  border-radius: var(--radius-full);
+  background: var(--c, var(--ink-3));
+  font-size: 0;
+  color: transparent;
 }
-@keyframes bb-new-dot {
-  50% {
-    box-shadow: 0 0 0 6px color-mix(in srgb, var(--danger) 0%, transparent);
-  }
-}
-html[data-motion='off'] .msg.new .unread-dot {
-  animation: none;
+.list .acct-tag i {
+  display: none;
 }
 
-/* ---------- 收件箱里的折叠行（1.0.35）：做成低调的灰边小行，不和有底色的未读邮件混在一起 ---------- */
+/* ---------- 收件箱里的折叠组（1.2.0）：和普通邮件行同高，两个叠放的头像表示「一组」 ---------- */
 .bundle.stack {
   background: transparent;
-  border: 1px dashed rgba(128, 128, 128, 0.4);
-  margin: 3px 10px;
-  padding: 7px 14px;
+  border: 0;
+  margin: 0;
+  padding: 7px 16px;
+  min-height: 46px;
   border-radius: var(--radius-md);
   filter: none;
+  gap: 14px;
 }
 .bundle.stack:hover {
-  background: rgba(128, 128, 128, 0.1);
+  background: var(--bg-hover);
   filter: none;
 }
 .bundle.stack .bundle-icon {
-  width: 26px;
-  height: 26px;
+  width: 30px;
+  height: 30px;
   font-size: var(--fs-sm);
+  font-weight: 600;
+  /* 后面再垫一个灰圆，看起来是一叠 */
+  box-shadow: 6px -3px 0 -1px var(--bg-list), 6px -3px 0 0 color-mix(in srgb, var(--ink-3) 45%, transparent);
+  margin-right: 6px;
 }
 .bundle.stack .bundle-label {
-  font-size: var(--fs-md);
-  font-weight: 600;
+  font-size: var(--fs-base);
+  font-weight: 400;
+  min-width: 0;
+}
+.bundle.stack .bundle-senders {
+  color: var(--ink-2);
+  font-weight: 400;
 }
 .bundle.stack.quiet {
-  opacity: 0.75;
-}
-.bundle.stack .bundle-unread-sub {
-  color: var(--ink);
-  font-weight: 600;
+  opacity: 1;
 }
 
 /* ---------- 文字可选可复制（1.0.39）：阅读页里的主题、发件人、地址、时间、附件名，以及各个对话框里的文字 ---------- */
