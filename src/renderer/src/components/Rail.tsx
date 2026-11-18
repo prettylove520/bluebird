@@ -81,7 +81,7 @@ export function Rail(props: Props) {
       <div className="rail-foot">
         <button className="rail-btn" onClick={props.onSettings} title={props.updateReady ? '设置（有新版本）' : '设置'} aria-label="设置">
           <Icon name="gear" size={22} />
-          {props.updateReady && <span className="rail-dot" />}
+          {props.updateReady && <span className="rail-dot update" />}
         </button>
         {props.account && (
           <button

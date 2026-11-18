@@ -176,6 +176,8 @@ export const api = {
   badge: (dataUrl: string, count: number) => call<boolean>('badge', dataUrl, count),
 
   onNewMail: (cb: (e: NewMailEvent) => void) => listen<NewMailEvent>('onNewMail', cb),
+  /** 在可拖动窗口的区域（比如列表顶部）点了右键：系统把它当成标题栏右键，主进程拦下来转给界面 */
+  onDragContextMenu: (cb: (p: { x: number; y: number }) => void) => listen<{ x: number; y: number }>('onDragContextMenu', cb),
   onChanged: (cb: (e: { accountId: string }) => void) => listen<{ accountId: string }>('onChanged', cb),
   onOpenMail: (cb: (e: { accountId: string; folder: string; uid?: number }) => void) =>
     listen<{ accountId: string; folder: string; uid?: number }>('onOpenMail', cb),

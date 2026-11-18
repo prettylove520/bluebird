@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { toLocalInput } from '../utils'
+import { toLocalInput, isImeComposing } from '../utils'
 
 interface Props {
   title: string
@@ -24,6 +24,7 @@ export function TimeDialog({ title, confirmLabel, onPick, onCancel }: Props) {
           if (valid) onPick(ts)
         }}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (e.key === 'Escape') {
             // 这一下 Esc 只关这个窗口，不能再传给主界面去关读信页、清勾选
             e.stopPropagation()

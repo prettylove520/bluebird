@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, AppInfo, ServerConfig, Settings, Template, UpdateStatus, UserData } from '../../../shared/types'
 import { api } from '../api'
-import { accountTags, tagMark } from '../utils'
+import { accountTags, tagMark, isImeComposing } from '../utils'
 import { TARGET_LANGS } from '../translate'
 import { AI_PRESETS, AI_TONES, aiHost, isPresetModel, presetOf } from '../../../shared/ai'
 import { HOME_SCENES, resolveScene, sceneForHour } from './Home'
@@ -255,6 +255,7 @@ export function SettingsDialog(props: Props) {
   guard.current = { dirty, saving }
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      if (isImeComposing(e)) return
       if (e.key !== 'Escape' || !guard.current.dirty) return
       // 上面还盖着确认框、菜单时，Esc 是给它们的
       if (document.querySelector('.dialog.confirm, .menu')) return
@@ -1046,6 +1047,7 @@ function ModelPicker({ value, onChange, options, heading }: { value: string; onC
           }}
           onFocus={() => options.length && setOpen(true)}
           onKeyDown={(e) => {
+            if (isImeComposing(e)) return
             if (e.key === 'ArrowDown') {
               e.preventDefault()
               setOpen(true)

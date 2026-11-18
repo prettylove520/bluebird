@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import type { BackupDetect, BackupInfo, BackupMeta } from '../../../shared/types'
 import { api } from '../api'
-import { friendlyTime } from '../utils'
+import { friendlyTime, isImeComposing } from '../utils'
 import { Icon } from './Icon'
 
 function describe(m: BackupMeta, thisDevice: string): string {
@@ -23,6 +23,7 @@ function PasswordField(props: { value: string; onChange: (v: string) => void; pl
         spellCheck={false}
         onChange={(e) => props.onChange(e.target.value)}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (e.key === 'Enter') props.onEnter?.()
         }}
       />

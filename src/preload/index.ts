@@ -106,6 +106,7 @@ const api = {
   exportDiagnostics: invoke('app:exportDiagnostics'),
   badge: invoke('app:badge'),
   onNewMail: on('mail:new'),
+  onDragContextMenu: on('window:contextmenu'),
   onChanged: on('mail:changed'),
   onOpenMail: on('mail:open'),
   onMailto: on('compose:mailto'),

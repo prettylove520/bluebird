@@ -1,6 +1,6 @@
 import { Fragment, memo, useEffect, useMemo, useRef, useState } from 'react'
 import type { MailCategory, MessageSummary, SnoozeInfo } from '../../../shared/types'
-import { avatarColor, avatarText, dateGroup, displayName, friendlyTime, shortDate } from '../utils'
+import { avatarColor, avatarText, dateGroup, displayName, friendlyTime, shortDate, isImeComposing } from '../utils'
 import { Icon, type IconName } from './Icon'
 
 export type RowAction = 'archive' | 'delete' | 'flag' | 'seen' | 'pin' | 'snooze'
@@ -594,6 +594,7 @@ export function MessageList(props: Props) {
             onChange={(e) => props.onQueryChange(e.target.value)}
             placeholder={props.scope === 'here' ? '在这个文件夹里搜索' : '搜索所有邮箱'}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return
               if (e.key === 'Escape') {
                 props.onClearSearch()
                 e.currentTarget.blur()

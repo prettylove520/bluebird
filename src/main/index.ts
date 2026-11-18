@@ -1,6 +1,6 @@
 // 主进程入口：窗口、IPC、新邮件通知
 
-import { app, type MenuItemConstructorOptions, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, session, shell, Tray } from 'electron'
+import { app, type MenuItemConstructorOptions, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, powerMonitor, screen, session, shell, Tray } from 'electron'
 import { mkdir, rm, stat, writeFile } from 'fs/promises'
 import { basename, extname, join } from 'path'
 import { pathToFileURL } from 'url'
@@ -199,7 +199,8 @@ function createWindow(): void {
     icon: appIcon(),
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#1c1c1e' : '#ffffff',
+    // 和界面深色模式的列表底色一致，启动时不会先闪一下别的灰
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#2b2f38' : '#ffffff',
     // 去掉系统标题栏，界面一直铺到顶部；右上角保留 Windows 自带的最小化/最大化/关闭按钮
     titleBarStyle: 'hidden',
     titleBarOverlay: titleBarColors(),
@@ -213,6 +214,16 @@ function createWindow(): void {
   })
 
   win.once('ready-to-show', () => win?.show())
+  // 界面顶部可拖动窗口的区域（列表顶部、读信顶栏）在 Windows 上被当成标题栏，右键会弹出「还原/关闭」系统菜单，
+  // 界面自己的右键菜单（比如文件夹菜单）就出不来。拦下来，把鼠标位置换算成窗口内坐标交给界面处理
+  win.on('system-context-menu', (e) => {
+    if (!win || win.isDestroyed()) return
+    e.preventDefault()
+    const c = screen.getCursorScreenPoint()
+    const b = win.getContentBounds()
+    const z = win.webContents.getZoomFactor() || 1
+    win.webContents.send('window:contextmenu', { x: (c.x - b.x) / z, y: (c.y - b.y) / z })
+  })
   // 界面里的报错也记到日志里
   // 新旧版本的 Electron 传参方式不同：旧版是 (事件, 级别数字, 内容…)，新版把它们都放在事件对象里
   win.webContents.on('console-message', (e: { level?: unknown; message?: string }) => {
@@ -901,7 +912,10 @@ function registerIpc(): void {
     dropStateBackup()
     return data
   })
-  handle('schedule:cancel', (id: string) => updateData({ scheduled: getData().scheduled.filter((s) => s.id !== id) }))
+  handle('schedule:cancel', (id: string) => {
+    if (sending.has(id)) throw new Error('这封邮件正在发送中，来不及取消了')
+    updateData({ scheduled: getData().scheduled.filter((s) => s.id !== id) })
+  })
   handle('schedule:sendNow', async (id: string) => {
     const item = getData().scheduled.find((s) => s.id === id)
     if (!item) throw new Error('这封定时邮件已经不在队列里了')
@@ -1098,7 +1112,7 @@ function registerIpc(): void {
           detail = await tryGet(60000)
         } else {
           console.warn(`[打开邮件] ${account.email} 15 秒没有回应，断开重连后再试一次`)
-          dropClient(account.id)
+          dropClient(account.id, undefined, true)
           detail = await tryGet(40000)
         }
       }

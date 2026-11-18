@@ -6,7 +6,9 @@ import SMTPConnection from 'nodemailer/lib/smtp-connection'
 import type Mail from 'nodemailer/lib/mailer'
 import type SMTPTransport from 'nodemailer/lib/smtp-transport'
 import * as socks from 'socks'
-import { existsSync } from 'fs'
+import { app } from 'electron'
+import { existsSync, realpathSync, statSync } from 'fs'
+import { relative, isAbsolute } from 'path'
 import { hostname } from 'os'
 import type { Account, OutgoingMessage } from '../../shared/types'
 import { getAccessToken, invalidateAccessToken } from '../oauth'
@@ -194,6 +196,24 @@ function sendError(err: unknown, account: Account): Error {
  * 把一封要发的信组装成完整的邮件原文。发信、存「已发送」、存草稿都用它，保证是同一份。
  * draft：存草稿用——没有收件人也行；附件找不到就跳过而不是报错；加上草稿的编号和每个版本独有的 Message-ID
  */
+/**
+ * 附件路径是界面传来的，主进程再把一道关：只发普通文件，并且不能是 Bluebird 自己数据文件夹里的东西
+ * （那里有账号密钥、登录凭据；日志和诊断文件除外）。万一界面被恶意邮件内容攻破，也没法借「发邮件」把这些文件带出去
+ */
+function attachableFile(p: string): boolean {
+  try {
+    if (!statSync(p).isFile()) return false
+    const real = realpathSync(p)
+    const data = realpathSync(app.getPath('userData'))
+    const rel = relative(data.toLowerCase(), real.toLowerCase())
+    if (rel.startsWith('..') || isAbsolute(rel)) return true
+    // 数据文件夹里只放行日志、诊断这类本来就是给人看的文件（方便把日志发给别人帮忙排查）
+    return /\.(log|txt|zip)$/.test(rel)
+  } catch {
+    return false
+  }
+}
+
 export async function buildRaw(
   account: Account,
   msg: OutgoingMessage,
@@ -210,6 +230,10 @@ export async function buildRaw(
       if (!existsSync(a.path)) {
         if (draft) continue
         throw new Error(`附件「${a.filename}」在这台电脑上找不到了，请重新添加后再发送`)
+      }
+      if (!attachableFile(a.path)) {
+        if (draft) continue
+        throw new Error(`附件「${a.filename}」不能发送：它不是普通文件，或者在 Bluebird 自己的数据文件夹里`)
       }
       attachments.push({ filename: a.filename, path: a.path })
     } else if (a.fromMessage) {

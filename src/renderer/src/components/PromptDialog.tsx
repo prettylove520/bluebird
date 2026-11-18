@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { isImeComposing } from '../utils'
 
 interface Props {
   title: string
@@ -45,6 +46,7 @@ export function PromptDialog({ title, message, initial, placeholder, confirmLabe
           void submit()
         }}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (e.key === 'Escape') {
             e.stopPropagation()
             if (!busy) onCancel()

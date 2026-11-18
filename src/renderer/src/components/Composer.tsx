@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { Account, ComposeAttachment, ComposeSettings, LocalDraft, OutgoingMessage, Template } from '../../../shared/types'
 import { AI_TONES, type AiMail } from '../../../shared/ai'
 import { api } from '../api'
-import { escapeHtml, formatSize, timePresets } from '../utils'
+import { escapeHtml, formatSize, sanitizeForQuote, timePresets, isImeComposing } from '../utils'
 import { ContextMenu, type MenuItem } from './ContextMenu'
 import { Icon } from './Icon'
 import { RecipientInput } from './RecipientInput'
@@ -73,6 +73,20 @@ interface Props {
   /** savedDraft 为 true 表示关闭时内容已经存成草稿 */
   onClose: (savedDraft: boolean) => void
   onSent: (message: string) => void
+}
+
+/** 选中 range 后用 insertHTML 放进内容：走浏览器自己的编辑命令，Ctrl+Z 可以撤回。浏览器不支持时返回 false */
+function insertUndoable(ed: HTMLElement, range: Range, html: string): boolean {
+  ed.focus()
+  const sel = window.getSelection()
+  if (!sel) return false
+  sel.removeAllRanges()
+  sel.addRange(range)
+  try {
+    return document.execCommand('insertHTML', false, html)
+  } catch {
+    return false
+  }
 }
 
 export function Composer(props: Props) {
@@ -160,7 +174,8 @@ export function Composer(props: Props) {
   useEffect(() => {
     const ed = editorRef.current
     if (!ed) return
-    ed.innerHTML = init.rawHtml ?? '<div><br></div>' + init.bodyHtml
+    // 草稿可能来自备份文件恢复：编辑器在主界面里，放进去之前照样清洗一遍（去掉脚本、事件属性），自己写的格式不受影响
+    ed.innerHTML = init.rawHtml != null ? sanitizeForQuote(init.rawHtml, true, true) : '<div><br></div>' + init.bodyHtml
     baseline.current = snapshot()
     // 新邮件先填收件人；回复时光标放在正文最前面
     if (init.mode === 'new' || init.mode === 'forward') {
@@ -239,11 +254,21 @@ export function Composer(props: Props) {
     if (!ed || !aiResult) return
     const nodes = userNodes()
     const hadText = userText() !== ''
-    const ref = nodes.length ? nodes[nodes.length - 1].nextSibling : ed.firstChild
-    if (replace || !hadText) nodes.forEach((n) => n.remove())
-    const holder = document.createElement('div')
-    holder.innerHTML = (hadText && !replace ? '<div><br></div>' : '') + aiToHtml(aiResult.text) + '<div><br></div>'
-    while (holder.firstChild) ed.insertBefore(holder.firstChild, ref)
+    const html = (hadText && !replace ? '<div><br></div>' : '') + aiToHtml(aiResult.text) + '<div><br></div>'
+    // 用浏览器的「插入」命令放进去，Ctrl+Z 能撤回（直接改 DOM 会把撤销记录清掉，误点「替换」就找不回原文了）
+    const range = document.createRange()
+    if (nodes.length) {
+      range.setStartBefore(nodes[0])
+      range.setEndAfter(nodes[nodes.length - 1])
+      if (!replace && hadText) range.collapse(false)
+    } else range.setStart(ed, 0)
+    if (!insertUndoable(ed, range, html)) {
+      const ref = nodes.length ? nodes[nodes.length - 1].nextSibling : ed.firstChild
+      if (replace || !hadText) nodes.forEach((n) => n.remove())
+      const holder = document.createElement('div')
+      holder.innerHTML = html
+      while (holder.firstChild) ed.insertBefore(holder.firstChild, ref)
+    }
     if (aiResult.subject && !subject.trim()) setSubject(aiResult.subject)
     dirty.current = true
     setAiResult(null)
@@ -409,9 +434,13 @@ export function Composer(props: Props) {
     const ed = editorRef.current
     if (!ed) return
     const html = escapeHtml(t.body).replace(/\r?\n/g, '<br>')
-    const block = document.createElement('div')
-    block.innerHTML = html
-    ed.insertBefore(block, ed.firstChild)
+    const range = document.createRange()
+    range.setStart(ed, 0)
+    if (!insertUndoable(ed, range, `<div>${html}</div>`)) {
+      const block = document.createElement('div')
+      block.innerHTML = html
+      ed.insertBefore(block, ed.firstChild)
+    }
     if (!subject.trim() && t.subject) setSubject(t.subject)
     dirty.current = true
     ed.focus()
@@ -445,6 +474,7 @@ export function Composer(props: Props) {
   }
 
   const onKeyDown = (e: React.KeyboardEvent): void => {
+    if (isImeComposing(e)) return
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault()
       void send()
@@ -579,6 +609,7 @@ export function Composer(props: Props) {
                 value={linkInput}
                 onChange={(e) => setLinkInput(e.target.value)}
                 onKeyDown={(e) => {
+                  if (isImeComposing(e)) return
                   if (e.key === 'Enter') {
                     e.preventDefault()
                     applyLink()
@@ -630,6 +661,7 @@ export function Composer(props: Props) {
                   autoFocus={!!init.aiOpen}
                   onChange={(e) => setAiInstr(e.target.value)}
                   onKeyDown={(e) => {
+                    if (isImeComposing(e)) return
                     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && !aiBusy) {
                       e.preventDefault()
                       aiGenerate()

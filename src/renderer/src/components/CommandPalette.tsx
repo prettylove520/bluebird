@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Icon, type IconName } from './Icon'
+import { isImeComposing } from '../utils'
 
 export interface Command {
   label: string
@@ -65,6 +66,7 @@ export function CommandPalette({ commands, title, onClose }: Props) {
             placeholder="输入要做的事，或文件夹名称"
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return
               if (e.key === 'ArrowDown') {
                 e.preventDefault()
                 setIndex((i) => Math.min(matches.length - 1, i + 1))

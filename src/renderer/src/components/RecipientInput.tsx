@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type { Contact } from '../../../shared/types'
 import { api } from '../api'
-import { avatarColor } from '../utils'
+import { avatarColor, isImeComposing } from '../utils'
 
 interface Props {
   value: string
@@ -113,6 +113,7 @@ export function RecipientInput({ value, onChange, placeholder, inputRef }: Props
           setItems([])
         }}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (!open || e.ctrlKey || e.metaKey || e.altKey) return
           if (e.key === 'ArrowDown') {
             e.preventDefault()

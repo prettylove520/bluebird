@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { isImeComposing } from '../utils'
 
 interface Props {
   title: string
@@ -19,6 +20,7 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, onConfirm,
         role="alertdialog"
         aria-label={title}
         onKeyDown={(e) => {
+          if (isImeComposing(e)) return
           if (e.key === 'Escape') {
             // 这一下 Esc 只关这个窗口，不能再传给主界面去关读信页、清勾选
             e.stopPropagation()

@@ -1937,7 +1937,7 @@ select:focus {
   font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--ink-3);
-  word-break: break-all;
+  overflow-wrap: anywhere;
 }
 .set-control {
   flex: none;
@@ -3282,7 +3282,7 @@ kbd {
 /* ---------- 读信页工具栏：放大一号，间距拉开 ---------- */
 
 .reader .toolbar {
-  gap: 10px;
+  gap: 6px;
   height: 66px;
   padding-top: 10px;
 }
@@ -3333,6 +3333,54 @@ kbd {
 }
 .reader .toolbar .tool.more-pill .icon {
   stroke-width: 3;
+}
+
+/* 读信区变窄时（分栏、小窗口）工具栏自动收紧，按钮不再挤到右上角的系统按钮底下：
+   先把胶囊按钮的文字收起只留图标；再窄就把「更多」菜单里也有的操作（标已读、全部回复、转发）藏起来；
+   最窄时再藏置顶和快捷回复 */
+.reader .toolbar {
+  container-type: inline-size;
+}
+/* 宽的时候按钮间距和原来一样（6 + 4 = 10px）；变窄后只剩 6px。注意容器宽度不含左右留白（右边留给系统按钮的 150px） */
+@container (min-width: 1000px) {
+  .reader .toolbar > * + * {
+    margin-left: 4px;
+  }
+}
+@container (max-width: 999px) {
+  .reader .toolbar .pill-btn {
+    width: 40px;
+    padding: 0;
+    justify-content: center;
+  }
+  .reader .toolbar .pill-btn .pill-text {
+    display: none;
+  }
+}
+@container (max-width: 699px) {
+  .reader .toolbar .t-seen,
+  .reader .toolbar .p-more {
+    display: none;
+  }
+}
+@container (max-width: 559px) {
+  .reader .toolbar .t-pin,
+  .reader .toolbar .t-quick {
+    display: none;
+  }
+  .reader .toolbar .tool {
+    width: 36px;
+  }
+  .reader .toolbar .pill-btn {
+    width: 36px;
+  }
+  .reader .toolbar .tool.more-pill {
+    width: 44px;
+    margin-left: 0;
+  }
+  .nav-pill {
+    margin-right: 4px;
+  }
 }
 
 /* 设置页里的分步说明 */
@@ -4544,15 +4592,9 @@ kbd {
   opacity: 1;
   background: rgba(255, 255, 255, 0.16);
 }
-.rail-dot {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
+/* 设置上的「有新版本」才用红点，其他位置是中性灰点（见上面 .rail-dot） */
+.rail-dot.update {
   background: var(--danger);
-  box-shadow: 0 0 0 2px var(--bg, #fff);
 }
 .update-banner .update-go:disabled {
   opacity: 0.6;

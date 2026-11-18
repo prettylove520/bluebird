@@ -50,8 +50,7 @@ import {
   prefixSubject,
   quoteHeader,
   sanitizeForQuote,
-  timePresets
-} from './utils'
+  timePresets, isImeComposing } from './utils'
 
 import {
   ALL,
@@ -2503,12 +2502,14 @@ export default function App() {
   const refreshOneInbox = async (accountId: string): Promise<void> => {
     const folder = inboxPath(accountId)
     // 走代理时连服务器可能要好几十秒、也可能中途被别的刷新顶掉：没成功就隔一会儿再试，最多三次，别让新邮件一直不出现
+    // 记住开始时正在看的列表：等着重试的这几秒里用户切到别的文件夹，就不要把收件箱的邮件塞进去
+    const id = listReq.current
     for (const wait of [0, 5000, 15000]) {
       if (wait) await new Promise((r) => setTimeout(r, wait))
-      const id = listReq.current
+      if (id !== listReq.current) return
       try {
         const page = await api.list(accountId, folder)
-        if (id !== listReq.current) continue
+        if (id !== listReq.current) return
         const group = groupOf({ accountId, folder, uid: 0 })
         setMessages((prev) => mergeFresh(page.messages, prev, true, [group]))
         lastListAt.current = Date.now()
@@ -2799,6 +2800,11 @@ export default function App() {
   useEffect(() => {
     const offs = [
       api.onNewMail((e) => handlers.current.onNewMail(e)),
+      // 列表顶部这类可拖动窗口的区域收不到右键（Windows 当成标题栏，弹系统菜单）：主进程拦下后，在同一位置补发一次右键
+      api.onDragContextMenu(({ x, y }) => {
+        const el = document.elementFromPoint(x, y)
+        el?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: x, clientY: y }))
+      }),
       api.onChanged((e) => handlers.current.onChanged(e)),
       api.onOpenMail((e) => handlers.current.onOpenMail(e)),
       api.onMailto((u) => handlers.current.onMailto(u)),
@@ -2811,7 +2817,9 @@ export default function App() {
         setUpdateBusy(false)
       })
     ]
-    const onKey = (e: KeyboardEvent): void => handlers.current.onKey(e)
+    const onKey = (e: KeyboardEvent): void => {
+      if (!isImeComposing(e)) handlers.current.onKey(e)
+    }
     const onFocus = (): void => handlers.current.onWindowFocus()
     window.addEventListener('keydown', onKey)
     window.addEventListener('focus', onFocus)

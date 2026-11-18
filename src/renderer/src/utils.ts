@@ -1,6 +1,12 @@
 import type { AiMail } from '../../shared/ai'
 import type { Address, MessageDetail } from '../../shared/types'
 
+/** 中文输入法正在选词（拼音还没上屏）：这时的回车、Esc、方向键是给输入法的，不能当成快捷键 */
+export function isImeComposing(e: KeyboardEvent | { nativeEvent: KeyboardEvent }): boolean {
+  const n = 'nativeEvent' in e ? e.nativeEvent : e
+  return n.isComposing || n.keyCode === 229
+}
+
 const WEEK = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
 const pad = (n: number): string => String(n).padStart(2, '0')
@@ -82,7 +88,11 @@ export function escapeHtml(s: string): string {
 /** 纯文本邮件转成 HTML，网址变成链接 */
 export function textToHtml(text: string): string {
   const escaped = escapeHtml(text)
-  const linked = escaped.replace(/(https?:\/\/[^\s<>"']+)/g, '<a href="$1">$1</a>')
+  // 网址到中文标点、全角字符为止（「见 https://a.com，谢谢」不能把「，谢谢」也算进去）；句末的标点也不算
+  const linked = escaped.replace(/https?:\/\/[^\s<>"'\u3000-\u303f\uff00-\uffef]+/g, (m) => {
+    const url = m.replace(/[.,;:!?)\]}]+$/, '')
+    return `<a href="${url}">${url}</a>${m.slice(url.length)}`
+  })
   return `<div class="fm-plain">${linked}</div>`
 }
 
@@ -103,6 +113,7 @@ blockquote{margin:0 0 0 .6em;padding-left:.8em;border-left:3px solid #d5dbe1;col
 const EMAIL_DARK_CSS = `
 html,body{background:#e0e5f0;}html{filter:invert(.9) hue-rotate(180deg);}
 img,video,picture,svg,[background],[style*="background-image"],[style*="background:url"]{filter:invert(1) hue-rotate(180deg);}
+:is(img,video,picture,svg,[background],[style*="background-image"],[style*="background:url"]) :is(img,video,picture,svg,[background],[style*="background-image"],[style*="background:url"]){filter:none;}
 `
 
 /** 去掉邮件 HTML 里会自动跳转或执行的东西（iframe 本身已禁用脚本，这里再加一层保险） */
@@ -223,7 +234,7 @@ function urlAllowed(name: string, value: string, allowRemote: boolean): boolean 
  * 回复/转发时把原邮件引用进编辑器。编辑器在应用自己的页面里，
  * 所以必须清洗：去掉脚本、样式表、事件属性；不允许远程图片时把它们删掉。
  */
-export function sanitizeForQuote(html: string, allowRemote: boolean): string {
+export function sanitizeForQuote(html: string, allowRemote: boolean, keepClass = false): string {
   const doc = new DOMParser().parseFromString(html, 'text/html')
   doc.querySelectorAll(DROP_TAGS).forEach((el) => el.remove())
   doc.body.querySelectorAll('*').forEach((el) => {
@@ -246,7 +257,7 @@ export function sanitizeForQuote(html: string, allowRemote: boolean): string {
           if (kept) el.setAttribute('style', kept)
           else el.removeAttribute(attr.name)
         }
-      } else if ((name === 'class' || name === 'id') && el.tagName !== 'A') el.removeAttribute(attr.name)
+      } else if (!keepClass && (name === 'class' || name === 'id') && el.tagName !== 'A') el.removeAttribute(attr.name)
     }
     // 远程图片被去掉地址以后只剩一个空壳，直接删掉
     if (el.tagName === 'IMG' && !el.getAttribute('src')) el.remove()

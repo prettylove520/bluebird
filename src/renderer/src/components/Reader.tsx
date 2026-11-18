@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Account, Address, CalendarInvite, InviteAnswer, MessageDetail, MessageSummary } from '../../../shared/types'
-import { aiMailOf, joinAddresses, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate } from '../utils'
+import { aiMailOf, joinAddresses, avatarColor, avatarText, buildEmailDocument, displayName, formatSize, fullDate, shortDate, isImeComposing } from '../utils'
 import { canPreview } from './AttachmentViewer'
 import { Icon } from './Icon'
 import { api } from '../api'
@@ -546,7 +546,7 @@ export function Reader(props: Props) {
           </button>
         )}
         <button
-          className="tool no-drag"
+          className="tool no-drag t-quick"
           onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect()
             props.onQuickMenu(r.left, r.bottom + 6, (text) => {
@@ -560,7 +560,7 @@ export function Reader(props: Props) {
           <Icon name="bolt" size={21} />
         </button>
         <button
-          className={`tool no-drag ${props.seen ? '' : 'on-accent'}`}
+          className={`tool no-drag t-seen ${props.seen ? '' : 'on-accent'}`}
           onClick={props.onToggleSeen}
           title={props.seen ? '标为未读（U）' : '标为已读（U）'}
           aria-label={props.seen ? '标为未读' : '标为已读'}
@@ -569,7 +569,7 @@ export function Reader(props: Props) {
           <Icon name="circle" size={21} filled={!props.seen} />
         </button>
         <button
-          className={`tool no-drag ${props.pinned ? 'on-accent' : ''}`}
+          className={`tool no-drag t-pin ${props.pinned ? 'on-accent' : ''}`}
           onClick={props.onTogglePin}
           title={props.pinned ? '取消置顶' : '置顶'}
           aria-label="置顶"
@@ -612,23 +612,24 @@ export function Reader(props: Props) {
           className={`pill-btn no-drag ${aiSum ? 'on' : ''}`}
           onClick={() => (props.aiReady ? (aiSum ? setAiSum(null) : summarize()) : props.onAiSetup?.())}
           title={props.aiReady ? '让 AI 总结这封邮件' : 'AI 助手还没有开启，点一下去设置'}
+          aria-label="AI 总结"
         >
           <Icon name="sparkle" size={19} />
-          AI 总结
+          <span className="pill-text">AI 总结</span>
         </button>
-        <button className="pill-btn no-drag" onClick={props.onReply} title="回复（R）">
+        <button className="pill-btn no-drag" onClick={props.onReply} title="回复（R）" aria-label="回复">
           <Icon name="reply" size={19} />
-          回复
+          <span className="pill-text">回复</span>
         </button>
         {detail.to.length + detail.cc.length > 1 && (
-          <button className="pill-btn no-drag" onClick={props.onReplyAll} title="全部回复（A）">
+          <button className="pill-btn no-drag p-more" onClick={props.onReplyAll} title="全部回复（A）" aria-label="全部回复">
             <Icon name="replyAll" size={19} />
-            全部回复
+            <span className="pill-text">全部回复</span>
           </button>
         )}
-        <button className="pill-btn no-drag" onClick={props.onForward} title="转发（F）">
+        <button className="pill-btn no-drag p-more" onClick={props.onForward} title="转发（F）" aria-label="转发">
           <Icon name="forward" size={19} />
-          转发
+          <span className="pill-text">转发</span>
         </button>
       </div>
 
@@ -893,6 +894,7 @@ export function Reader(props: Props) {
             placeholder={`回复 ${displayName(sender)}…`}
             onChange={(e) => setReply(e.target.value)}
             onKeyDown={(e) => {
+              if (isImeComposing(e)) return
               if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                 e.preventDefault()
                 void sendReply()

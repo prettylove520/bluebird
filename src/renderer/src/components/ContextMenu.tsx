@@ -40,9 +40,20 @@ export function ContextMenu({ x, y, title, items, onClose }: Props) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
+      // 菜单开着时按键只给菜单：不然方向键会切走背后的邮件，字母键会触发快捷键
+      e.stopPropagation()
       if (e.key === 'Escape') {
-        e.stopPropagation()
         onClose()
+        return
+      }
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp' || e.key === 'Home' || e.key === 'End') {
+        e.preventDefault()
+        const btns = [...(ref.current?.querySelectorAll<HTMLButtonElement>('.menu-item:not(:disabled)') ?? [])]
+        if (!btns.length) return
+        const at = btns.indexOf(document.activeElement as HTMLButtonElement)
+        const next =
+          e.key === 'Home' ? 0 : e.key === 'End' ? btns.length - 1 : e.key === 'ArrowDown' ? (at + 1) % btns.length : at <= 0 ? btns.length - 1 : at - 1
+        btns[next].focus()
       }
     }
     window.addEventListener('keydown', onKey, true)

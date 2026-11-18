@@ -257,9 +257,10 @@ export function isConnecting(accountId: string): boolean {
  * 传了 only：只有当前连接还是出问题的那一条时才断开——几个请求同时失败时，
  * 先失败的已经重连好了，后失败的不能把这条新连接又关掉。
  */
-export function dropClient(accountId: string, only?: ImapFlow): void {
-  // 两条连接（main 和 bg）都看一遍；accountId 本身已经带着 #bg 时只会对上它自己那一条
-  for (const key of [accountId, connKey(accountId, 'bg')]) {
+export function dropClient(accountId: string, only?: ImapFlow, mainOnly = false): void {
+  // 两条连接（main 和 bg）都看一遍；accountId 本身已经带着 #bg 时只会对上它自己那一条。
+  // mainOnly：只断前台那条（打开邮件卡住时），后台正在跑的同步、搜索不受连累
+  for (const key of mainOnly ? [accountId] : [accountId, connKey(accountId, 'bg')]) {
     const c = conns.get(key)
     if (!c) continue
     if (only) {
@@ -570,10 +571,8 @@ export function startWatcher(
             if (now !== w.exists) {
               const grew = now > w.exists
               w.exists = now
-              if (grew) {
-                console.warn(`[watch ${account.email}] 没收到推送，但收件箱多了邮件，去取`)
-                void check()
-              }
+              // 上面已经按 UID 问过一遍了，这里只记一笔，不再重复去取
+              if (grew) console.warn(`[watch ${account.email}] 没收到推送，但收件箱多了邮件`)
             }
             w.poll = setTimeout(ask, pollMs())
           })
