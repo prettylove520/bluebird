@@ -316,6 +316,8 @@ const MsgRow = memo(function MsgRow(r: RowProps) {
 
 // 列表一次最多先画这么多行
 const RENDER_STEP = 200
+/** 换文件夹、换标签时先画这么多行（一屏十几行，60 行够往下滚好几屏），快滚到底再按 RENDER_STEP 补。一次画 200 行切换时会顿一下 */
+const RENDER_FIRST = 60
 
 export function MessageList(props: Props) {
   const { messages, selectedKey, checked } = props
@@ -353,10 +355,10 @@ export function MessageList(props: Props) {
   )
 
   // 列表很长时不一次全画出来：先画前面一批，滚到底再接着画，几千封邮件也不会卡
-  const [limit, setLimit] = useState(RENDER_STEP)
+  const [limit, setLimit] = useState(RENDER_FIRST)
   const reveal = useRef<string | null>(null)
   useEffect(() => {
-    setLimit(RENDER_STEP)
+    setLimit(RENDER_FIRST)
   }, [props.title, props.tab, props.searchActive])
   const rows = messages.length > limit ? messages.slice(0, limit) : messages
   const moreToRender = messages.length > limit

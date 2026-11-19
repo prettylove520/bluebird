@@ -264,7 +264,24 @@ function OpeningNote({ onRetry }: { onRetry?: () => void }) {
 }
 
 export function Reader(props: Props) {
-  const { detail } = props
+  // 换到另一封邮件时，正文多半几十毫秒就从缓存回来了。这么短的时间里先把上一封留着（变淡、点不了），
+  // 不要先拆成「正在打开」的空白页再重新搭一遍——那样每换一封都闪一下，还要多重画一整页。
+  // 超过 0.3 秒还没回来，才显示「正在打开」
+  const held = useRef<MessageDetail | null>(null)
+  if (props.detail) held.current = props.detail
+  else if (!props.hasSelection || props.error) held.current = null
+  const waiting = props.loading && !props.detail && props.hasSelection
+  const [slow, setSlow] = useState(false)
+  useEffect(() => {
+    if (!waiting) {
+      setSlow(false)
+      return
+    }
+    const t = setTimeout(() => setSlow(true), 300)
+    return () => clearTimeout(t)
+  }, [waiting])
+  const holding = waiting && !slow && !!held.current
+  const detail = props.detail ?? (holding ? held.current : null)
   const [allowRemote, setAllowRemote] = useState(props.autoLoadImages)
   const [reply, setReply] = useState('')
   const [sending, setSending] = useState(false)
@@ -516,7 +533,7 @@ export function Reader(props: Props) {
   }
 
   return (
-    <section className="reader">
+    <section className={`reader ${holding ? 'holding' : ''}`} aria-busy={holding || undefined}>
       <div className="toolbar titlebar-drag" role="toolbar" aria-label="邮件操作">
         <div className={`nav-pill no-drag ${props.onBack ? '' : 'solo'}`}>
           {props.onBack && (

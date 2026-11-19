@@ -3341,6 +3341,13 @@ kbd {
 .reader .toolbar {
   container-type: inline-size;
 }
+/* 换邮件时下一封还在路上：先留着上一封，变淡、点不了（见 Reader.tsx 的 holding） */
+.reader.holding .reader-scroll,
+.reader.holding .toolbar {
+  opacity: 0.55;
+  pointer-events: none;
+  transition: opacity 0.12s ease 0.08s;
+}
 /* 宽的时候按钮间距和原来一样（6 + 4 = 10px）；变窄后只剩 6px。注意容器宽度不含左右留白（右边留给系统按钮的 150px） */
 @container (min-width: 1000px) {
   .reader .toolbar > * + * {

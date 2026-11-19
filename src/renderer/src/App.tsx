@@ -295,11 +295,14 @@ export default function App() {
     }
     return line
   })()
-  const pinnedKeys = new Set(Object.keys(data.pinned))
-  const prioritySet = new Set(data.priority)
+  const pinnedKeys = useMemo(() => new Set(Object.keys(data.pinned)), [data.pinned])
+  const prioritySet = useMemo(() => new Set(data.priority), [data.priority])
   // 在所有邮箱里搜索时，结果里什么都列出来（包括推迟了的），不受当前所在文件夹的限制
   const globalSearch = !!activeQuery && (searchScope === 'all' || virtualView)
-  const shown = messages.filter((m) => {
+  // 下面这一串（筛选、合并会话、排序、折叠）每次都要把整个列表过一遍，几百封邮件要算好几毫秒。
+  // 点开一封邮件会连着刷新界面四五次（选中、加载中、正文到了……），这些刷新和列表无关，
+  // 所以按真正用到的数据缓存起来，数据没变就直接用上次的结果
+  const shown = useMemo(() => messages.filter((m) => {
     if (hiddenKeys.size && hiddenKeys.has(keyOf(m))) return false
     if (globalSearch) return !isBlocked(senderOf(m))
     if (snoozedView) return !!data.snoozed[keyOf(m)]
@@ -308,32 +311,42 @@ export default function App() {
     // 没读的邮件不受水位线限制：侧栏的红点数的是所有没读的，列表里却因为「还没翻到那么早」把它藏起来，就会出现有红点却找不到邮件
     if (waterline && m.date < waterline && m.seen && !data.pinned[keyOf(m)]) return false
     return !isBlocked(senderOf(m))
-  })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- isBlocked 只依赖 data.blocked
+  }), [messages, hiddenKeys, globalSearch, snoozedView, pinnedView, data.snoozed, data.pinned, data.blocked, waterline])
   // 收件箱（聚焦）列出全部邮件，其中同一发件人的通知、订阅会折叠成一行（见下面的 stacks）；「通知」「订阅」页只看那一类
-  const inTab =
-    !smartInbox || tab === 'all' || tab === 'focus' ? shown : shown.filter((m) => m.category === tab)
+  const inTab = useMemo(
+    () => (!smartInbox || tab === 'all' || tab === 'focus' ? shown : shown.filter((m) => m.category === tab)),
+    [shown, smartInbox, tab]
+  )
   // ---------- 会话 ----------
   // 同一个话题来回的邮件合并成一行。搜索结果、「稍后处理」「已置顶」里不合并，一封是一封
   const threadsOn = settings?.reading.threads !== false && !activeQuery && !virtualView
   const threadIds = useMemo(() => threadKeys(messages), [messages])
-  const groups = groupByThread(inTab, threadsOn ? threadIds : null)
+  const groups = useMemo(() => groupByThread(inTab, threadsOn ? threadIds : null), [inTab, threadsOn, threadIds])
   const groupPinned = (g: MessageSummary[]): boolean => g.some((m) => pinnedKeys.has(keyOf(m)))
-  const { unreadTop, ordered, stacks } = arrangeGroups(groups, {
-    keepOrder: !!activeQuery || virtualView,
-    stackOn: smartInbox && tab !== 'all',
-    tab,
-    pinnedKeys,
-    stickTop,
-    selectedKey,
-    openStacks
-  })
-  /** 列表里的每一行：一封邮件，或者一个会话里最新的那一封 */
-  const visible = ordered.map((g) => g[0])
-  /** 列表里这些行包含的所有邮件 */
-  const flat = ordered.length === visible.length && ordered.every((g) => g.length === 1) ? visible : ordered.flat()
-  /** 每封邮件属于哪个会话（会话里的邮件新的在前） */
-  const threadMap = new Map<string, MessageSummary[]>()
-  for (const g of ordered) for (const m of g) threadMap.set(keyOf(m), g)
+  const { unreadTop, ordered, stacks } = useMemo(
+    () =>
+      arrangeGroups(groups, {
+        keepOrder: !!activeQuery || virtualView,
+        stackOn: smartInbox && tab !== 'all',
+        tab,
+        pinnedKeys,
+        stickTop,
+        selectedKey,
+        openStacks
+      }),
+    [groups, activeQuery, virtualView, smartInbox, tab, pinnedKeys, stickTop, selectedKey, openStacks]
+  )
+  const { visible, flat, threadMap } = useMemo(() => {
+    /** 列表里的每一行：一封邮件，或者一个会话里最新的那一封 */
+    const visible = ordered.map((g) => g[0])
+    /** 列表里这些行包含的所有邮件 */
+    const flat = ordered.length === visible.length && ordered.every((g) => g.length === 1) ? visible : ordered.flat()
+    /** 每封邮件属于哪个会话（会话里的邮件新的在前） */
+    const threadMap = new Map<string, MessageSummary[]>()
+    for (const g of ordered) for (const m of g) threadMap.set(keyOf(m), g)
+    return { visible, flat, threadMap }
+  }, [ordered])
   const threadOf = (ref: MsgRef): MessageSummary[] | undefined => threadMap.get(keyOf(ref))
   /** 把一批邮件换成它们所在的会话（去重） */
   const groupsOf = (refs: MsgRef[]): MsgRef[][] => {
