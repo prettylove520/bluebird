@@ -72,10 +72,24 @@ function closeQuietly(client: ImapFlow): void {
 const conns = new Map<string, Conn>()
 
 // 每条连接的忙闲：busy 是正在做的事的数量，last 是最后一次用完的时间。保活只在闲了一阵子之后才去敲一下
-const activity = new WeakMap<ImapFlow, { busy: number; last: number }>()
+// bytes/moved：正在用的时候，收发的字节数最后一次变化是什么时候（看连接是不是在干活就看它）
+const activity = new WeakMap<ImapFlow, { busy: number; last: number; bytes?: number; moved?: number }>()
+const traffic = (client: ImapFlow): number => {
+  try {
+    // stats() 是 imapflow 自带的字节计数，类型声明里漏了
+    const st = (client as unknown as { stats: () => { sent: number; received: number } }).stats()
+    return st.sent + st.received
+  } catch {
+    return 0
+  }
+}
 function track(client: ImapFlow): () => void {
   const a = activity.get(client) ?? { busy: 0, last: Date.now() }
   activity.set(client, a)
+  if (a.busy === 0) {
+    a.bytes = traffic(client)
+    a.moved = Date.now()
+  }
   a.busy++
   return () => {
     a.busy = Math.max(0, a.busy - 1)
@@ -122,7 +136,33 @@ function keepAlive(account: Account, client: ImapFlow, lane: Lane): void {
         a.last = Date.now()
       })
   }, 30000)
-  client.on('close', () => clearInterval(timer))
+  // 卡死检查：连接正在用（打开邮件、刷新列表），却很久一个字节都没收发，多半是代理那头已经悄悄断了。
+  // 不管它的话，这个请求和排在后面的请求会一直挂着（日志里见过刷新列表等了 60 秒）。
+  // 直接断开，正在做的事会按「连接断了」自动换一条新连接重做一次
+  const stallMs = lane === 'main' ? 20000 : 40000
+  const watchdog = setInterval(() => {
+    const a = activity.get(client)
+    if (!a || a.busy === 0 || !client.usable) return
+    const now = Date.now()
+    const bytes = traffic(client)
+    if (bytes !== a.bytes) {
+      a.bytes = bytes
+      a.moved = now
+      return
+    }
+    if (now - (a.moved ?? now) < stallMs) return
+    console.warn(`[卡住] ${account.email}（${lane}）${Math.round((now - (a.moved ?? now)) / 1000)} 秒没有任何数据往来，断开后换新连接重试`)
+    a.moved = now
+    try {
+      client.close()
+    } catch {
+      // 已经断了
+    }
+  }, 5000)
+  client.on('close', () => {
+    clearInterval(timer)
+    clearInterval(watchdog)
+  })
 }
 
 /**
